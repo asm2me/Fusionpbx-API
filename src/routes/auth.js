@@ -1,85 +1,87 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { validate } = require('../middleware/validate');
-const { authenticate, generateToken, getConfiguredDomains } = require('../middleware/auth');
-const config = require('../config/config');
-const logger = require('../utils/logger');
+const { validate }       = require('../middleware/validate');
+const { authenticate, generateToken } = require('../middleware/auth');
+const dbService          = require('../services/dbService');
+const config             = require('../config/config');
+const logger             = require('../utils/logger');
 
 const router = express.Router();
 
 /**
  * POST /api/auth/token
  *
- * Exchange a domain API key for a short-lived JWT.
- * The domain is inferred automatically from the key — no need to pass it.
+ * Exchange an API key (DB-backed or bootstrap admin) for a short-lived JWT.
  *
- * Body:
- *   { "api_key": "your-domain-api-key" }
+ * Domain-key:
+ *   { "api_key": "fpx_abc123..." }
+ *   → domain is resolved automatically from the DB record
  *
- * Response:
- *   { token, expires_in, token_type, domain }
- *
- * Admin key behaviour:
- *   Pass { "api_key": "<admin-key>", "domain": "target.com" } to obtain a
- *   JWT scoped to any specific domain.
+ * Bootstrap admin key:
+ *   { "api_key": "<ADMIN_API_KEY>", "domain": "company.com" }
+ *   → issues a JWT scoped to the specified domain
  */
 router.post(
   '/token',
   [body('api_key').notEmpty().withMessage('api_key is required')],
   validate,
-  (req, res) => {
-    const { api_key, domain: bodyDomain } = req.body;
+  async (req, res) => {
+    try {
+      const { api_key, domain: bodyDomain } = req.body;
 
-    // ── Admin key ─────────────────────────────────────────────────────────────
-    if (config.auth.adminApiKey && api_key === config.auth.adminApiKey) {
-      if (bodyDomain && !config.auth.domainToKey[bodyDomain]) {
-        return res.status(400).json({ error: `Domain "${bodyDomain}" is not configured` });
+      // ── Bootstrap admin key ────────────────────────────────────────────────
+      if (config.auth.adminApiKey && api_key === config.auth.adminApiKey) {
+        const token = generateToken({
+          userId: 'admin',
+          domain: bodyDomain || null,
+          admin:  true,
+          scope:  'full',
+        });
+        logger.info('Admin JWT issued', { domain: bodyDomain || 'all', ip: req.ip });
+        return res.json({
+          token,
+          expires_in: config.auth.jwtExpiresIn,
+          token_type: 'Bearer',
+          domain:     bodyDomain || null,
+        });
       }
+
+      // ── DB-backed domain key ───────────────────────────────────────────────
+      const keyData = await dbService.lookupApiKey(api_key);
+      if (!keyData) {
+        logger.warn('Token request with invalid API key', { ip: req.ip });
+        return res.status(401).json({ error: 'Invalid API key' });
+      }
+
       const token = generateToken({
-        userId: 'admin',
-        domain: bodyDomain || null,
-        admin: true,
-        scope: 'full',
+        userId:  keyData.username,
+        userUuid: keyData.user_uuid,
+        domain:  keyData.domain_name,
+        admin:   keyData.is_admin,
+        scope:   'full',
       });
-      logger.info('Admin JWT issued', { domain: bodyDomain || 'all', ip: req.ip });
-      return res.json({ token, expires_in: config.auth.jwtExpiresIn, token_type: 'Bearer', domain: bodyDomain || null });
+
+      logger.info('JWT issued', { domain: keyData.domain_name, user: keyData.username, ip: req.ip });
+      res.json({
+        token,
+        expires_in: config.auth.jwtExpiresIn,
+        token_type: 'Bearer',
+        domain:     keyData.domain_name,
+        username:   keyData.username,
+      });
+    } catch (err) {
+      logger.error('Token generation error', { error: err.message });
+      res.status(500).json({ error: 'Token generation failed' });
     }
-
-    // ── Domain API key ────────────────────────────────────────────────────────
-    const domain = config.auth.keyToDomain[api_key];
-    if (!domain) {
-      logger.warn('Token request with invalid API key', { ip: req.ip });
-      return res.status(401).json({ error: 'Invalid API key' });
-    }
-
-    const token = generateToken({
-      userId: 'crm-service',
-      domain,
-      scope: 'full',
-    });
-
-    logger.info('JWT issued', { domain, ip: req.ip });
-    res.json({ token, expires_in: config.auth.jwtExpiresIn, token_type: 'Bearer', domain });
   }
 );
 
 /**
  * GET /api/auth/verify
- * Verify current credentials and return user/domain context.
+ * Verify credentials and return the resolved user + domain context.
  */
 router.get('/verify', authenticate, (req, res) => {
   res.json({ valid: true, user: req.user, domain: req.domain });
-});
-
-/**
- * GET /api/auth/domains
- * Admin only – list all configured domains (keys are redacted).
- */
-router.get('/domains', authenticate, (req, res) => {
-  if (!req.user?.admin) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  res.json({ domains: getConfiguredDomains() });
 });
 
 module.exports = router;

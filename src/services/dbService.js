@@ -264,6 +264,158 @@ class DBService {
     return result.rows;
   }
 
+  // ─── API Key Management ───────────────────────────────────────────────────────
+
+  /**
+   * Look up an API key by its SHA-256 hash.
+   * Returns key record or null if not found / disabled / expired.
+   *
+   * @param {string} rawKey  Plain-text key from the request header
+   * @returns {object|null}  { api_key_uuid, domain_name, username, user_uuid, is_admin }
+   */
+  async lookupApiKey(rawKey) {
+    const hash = require('crypto').createHash('sha256').update(rawKey).digest('hex');
+    const sql = `
+      SELECT api_key_uuid, domain_name, username, user_uuid, is_admin
+      FROM v_api_keys
+      WHERE api_key_hash = $1
+        AND enabled = TRUE
+        AND (expires_at IS NULL OR expires_at > NOW())
+    `;
+    const result = await this.query(sql, [hash]);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Create a new API key for a FusionPBX user.
+   * Generates a cryptographically random key, stores only its hash.
+   *
+   * @param {object} opts
+   * @param {string} opts.userUuid     FusionPBX user UUID
+   * @param {string} opts.domainUuid   FusionPBX domain UUID
+   * @param {string} opts.domainName   Domain name string
+   * @param {string} opts.username     FusionPBX username
+   * @param {string} [opts.description]
+   * @param {boolean} [opts.isAdmin]   Cross-domain admin key
+   * @param {Date}   [opts.expiresAt]  Optional expiry date
+   * @returns {{ plainKey: string, record: object }}
+   *   plainKey is shown ONCE – it is not stored anywhere after this call.
+   */
+  async createApiKey({ userUuid, domainUuid, domainName, username, description, isAdmin = false, expiresAt }) {
+    const crypto = require('crypto');
+
+    // Generate key: fpx_ + 32 random bytes as hex = 68 chars total
+    const plainKey = 'fpx_' + crypto.randomBytes(32).toString('hex');
+    const hash     = crypto.createHash('sha256').update(plainKey).digest('hex');
+    const prefix   = plainKey.slice(0, 12);   // "fpx_" + first 8 hex chars
+
+    const sql = `
+      INSERT INTO v_api_keys
+        (user_uuid, domain_uuid, domain_name, username, api_key_hash, key_prefix,
+         description, is_admin, expires_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING api_key_uuid, domain_name, username, key_prefix, description,
+                is_admin, enabled, created_at, expires_at
+    `;
+    const result = await this.query(sql, [
+      userUuid, domainUuid, domainName, username,
+      hash, prefix, description || null, isAdmin, expiresAt || null,
+    ]);
+
+    return { plainKey, record: result.rows[0] };
+  }
+
+  /**
+   * List API keys for a domain (or all domains for admin).
+   * Never returns the key hash or plain key.
+   *
+   * @param {string|null} domainName  null = return all domains (admin only)
+   */
+  async listApiKeys(domainName) {
+    const conditions = [];
+    const params = [];
+    if (domainName) {
+      conditions.push(`k.domain_name = $1`);
+      params.push(domainName);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sql = `
+      SELECT
+        k.api_key_uuid,
+        k.domain_name,
+        k.username,
+        k.key_prefix,
+        k.description,
+        k.is_admin,
+        k.enabled,
+        k.last_used_at,
+        k.created_at,
+        k.expires_at
+      FROM v_api_keys k
+      ${where}
+      ORDER BY k.domain_name, k.created_at DESC
+    `;
+    const result = await this.query(sql, params);
+    return result.rows;
+  }
+
+  /**
+   * Revoke (hard-delete) an API key by UUID.
+   * Optionally scope to a domain to prevent cross-domain revocation.
+   */
+  async revokeApiKey(apiKeyUuid, domainName) {
+    const params = [apiKeyUuid];
+    let sql = `DELETE FROM v_api_keys WHERE api_key_uuid = $1`;
+    if (domainName) {
+      sql += ` AND domain_name = $2`;
+      params.push(domainName);
+    }
+    sql += ' RETURNING api_key_uuid';
+    const result = await this.query(sql, params);
+    return result.rowCount > 0;
+  }
+
+  /**
+   * Enable or disable an API key without deleting it.
+   */
+  async setApiKeyEnabled(apiKeyUuid, enabled, domainName) {
+    const params = [enabled, apiKeyUuid];
+    let sql = `UPDATE v_api_keys SET enabled = $1 WHERE api_key_uuid = $2`;
+    if (domainName) {
+      sql += ` AND domain_name = $3`;
+      params.push(domainName);
+    }
+    sql += ' RETURNING api_key_uuid';
+    const result = await this.query(sql, params);
+    return result.rowCount > 0;
+  }
+
+  /**
+   * Update last_used_at timestamp (fire-and-forget, errors are suppressed).
+   */
+  async updateApiKeyLastUsed(apiKeyUuid) {
+    const sql = `UPDATE v_api_keys SET last_used_at = NOW() WHERE api_key_uuid = $1`;
+    await this.query(sql, [apiKeyUuid]);
+  }
+
+  /**
+   * Validate that a FusionPBX user exists in a given domain.
+   * Used when creating API keys to ensure the user/domain pair is real.
+   */
+  async getFusionPBXUser(username, domainName) {
+    const sql = `
+      SELECT u.user_uuid, u.username, d.domain_uuid, d.domain_name
+      FROM v_users u
+      JOIN v_domains d ON d.domain_uuid = u.domain_uuid
+      WHERE u.username = $1
+        AND d.domain_name = $2
+        AND u.user_enabled = 'true'
+        AND d.domain_enabled = 'true'
+    `;
+    const result = await this.query(sql, [username, domainName]);
+    return result.rows[0] || null;
+  }
+
   async close() {
     if (this.pool) {
       await this.pool.end();

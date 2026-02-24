@@ -11,12 +11,13 @@ const swaggerSpec = require('./swagger/swagger');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 // ─── Route imports ────────────────────────────────────────────────────────────
-const authRoutes = require('./routes/auth');
-const callsRoutes = require('./routes/calls');
-const cdrRoutes = require('./routes/cdr');
+const authRoutes       = require('./routes/auth');
+const apikeysRoutes    = require('./routes/apikeys');
+const callsRoutes      = require('./routes/calls');
+const cdrRoutes        = require('./routes/cdr');
 const extensionsRoutes = require('./routes/extensions');
-const domainsRoutes = require('./routes/domains');
-const statusRoutes = require('./routes/status');
+const domainsRoutes    = require('./routes/domains');
+const statusRoutes     = require('./routes/status');
 
 const app = express();
 
@@ -72,8 +73,9 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
-app.use('/api/calls', callsRoutes);
+app.use('/api/auth',    authRoutes);
+app.use('/api/apikeys', apikeysRoutes);
+app.use('/api/calls',  callsRoutes);
 app.use('/api/cdr', cdrRoutes);
 app.use('/api/extensions', extensionsRoutes);
 app.use('/api/domains', domainsRoutes);
