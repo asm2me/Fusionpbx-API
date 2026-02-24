@@ -66,7 +66,6 @@ class WSService {
   _onConnection(ws, req) {
     const params = new URL(req.url, `http://${req.headers.host}`).searchParams;
     const token = params.get('token');
-    const domain = params.get('domain');
 
     const auth = this._authenticate(token);
     if (!auth) {
@@ -75,8 +74,11 @@ class WSService {
       return;
     }
 
+    // Domain is locked to the key's domain; admin may pass ?domain= to filter.
+    const domain = auth.domain || (auth.admin ? params.get('domain') : null);
+
     const clientId = `${auth.userId || 'anon'}_${Date.now()}`;
-    this.clients.set(clientId, { ws, domain, userId: auth.userId });
+    this.clients.set(clientId, { ws, domain, userId: auth.userId, admin: !!auth.admin });
 
     logger.info('WS client connected', { clientId, domain });
 
@@ -122,9 +124,12 @@ class WSService {
           this._send(ws, { type: 'pong', data: { ts: Date.now() } });
           break;
         case 'subscribe':
-          // Client can update domain filter dynamically
+          // Admin clients can update their domain filter; domain-key clients are locked.
           if (msg.domain && this.clients.has(clientId)) {
-            this.clients.get(clientId).domain = msg.domain;
+            const client = this.clients.get(clientId);
+            if (client.admin) {
+              client.domain = msg.domain;
+            }
           }
           break;
         default:
@@ -172,11 +177,19 @@ class WSService {
 
   _authenticate(token) {
     if (!token) return null;
-    // Accept API key
-    if (token === config.auth.apiKey) {
-      return { userId: 'api-key-user' };
+
+    // Admin API key – cross-domain access
+    if (config.auth.adminApiKey && token === config.auth.adminApiKey) {
+      return { userId: 'admin', admin: true, domain: null };
     }
-    // Accept JWT
+
+    // Per-domain API key – locked to its own domain
+    const domain = config.auth.keyToDomain[token];
+    if (domain) {
+      return { userId: 'crm-service', domain };
+    }
+
+    // JWT Bearer token
     try {
       return jwt.verify(token, config.auth.jwtSecret);
     } catch {

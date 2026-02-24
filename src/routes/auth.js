@@ -1,101 +1,85 @@
-/**
- * @swagger
- * tags:
- *   name: Auth
- *   description: Authentication - obtain JWT tokens
- */
-
 const express = require('express');
 const { body } = require('express-validator');
 const { validate } = require('../middleware/validate');
-const { generateToken } = require('../middleware/auth');
+const { authenticate, generateToken, getConfiguredDomains } = require('../middleware/auth');
 const config = require('../config/config');
 const logger = require('../utils/logger');
 
 const router = express.Router();
 
 /**
- * @swagger
- * /api/auth/token:
- *   post:
- *     summary: Exchange API key for a JWT token
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [api_key]
- *             properties:
- *               api_key:
- *                 type: string
- *                 description: Your CRM API key
- *               domain:
- *                 type: string
- *                 description: FusionPBX domain scope
- *     responses:
- *       200:
- *         description: JWT token issued
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 token:
- *                   type: string
- *                 expires_in:
- *                   type: string
- *       401:
- *         description: Invalid API key
+ * POST /api/auth/token
+ *
+ * Exchange a domain API key for a short-lived JWT.
+ * The domain is inferred automatically from the key — no need to pass it.
+ *
+ * Body:
+ *   { "api_key": "your-domain-api-key" }
+ *
+ * Response:
+ *   { token, expires_in, token_type, domain }
+ *
+ * Admin key behaviour:
+ *   Pass { "api_key": "<admin-key>", "domain": "target.com" } to obtain a
+ *   JWT scoped to any specific domain.
  */
 router.post(
   '/token',
-  [
-    body('api_key').notEmpty().withMessage('api_key is required'),
-  ],
+  [body('api_key').notEmpty().withMessage('api_key is required')],
   validate,
   (req, res) => {
-    const { api_key, domain } = req.body;
+    const { api_key, domain: bodyDomain } = req.body;
 
-    if (api_key !== config.auth.apiKey) {
+    // ── Admin key ─────────────────────────────────────────────────────────────
+    if (config.auth.adminApiKey && api_key === config.auth.adminApiKey) {
+      if (bodyDomain && !config.auth.domainToKey[bodyDomain]) {
+        return res.status(400).json({ error: `Domain "${bodyDomain}" is not configured` });
+      }
+      const token = generateToken({
+        userId: 'admin',
+        domain: bodyDomain || null,
+        admin: true,
+        scope: 'full',
+      });
+      logger.info('Admin JWT issued', { domain: bodyDomain || 'all', ip: req.ip });
+      return res.json({ token, expires_in: config.auth.jwtExpiresIn, token_type: 'Bearer', domain: bodyDomain || null });
+    }
+
+    // ── Domain API key ────────────────────────────────────────────────────────
+    const domain = config.auth.keyToDomain[api_key];
+    if (!domain) {
       logger.warn('Token request with invalid API key', { ip: req.ip });
       return res.status(401).json({ error: 'Invalid API key' });
     }
 
     const token = generateToken({
       userId: 'crm-service',
-      domain: domain || null,
+      domain,
       scope: 'full',
     });
 
-    logger.info('JWT token issued', { domain, ip: req.ip });
-
-    res.json({
-      token,
-      expires_in: config.auth.jwtExpiresIn,
-      token_type: 'Bearer',
-    });
+    logger.info('JWT issued', { domain, ip: req.ip });
+    res.json({ token, expires_in: config.auth.jwtExpiresIn, token_type: 'Bearer', domain });
   }
 );
 
 /**
- * @swagger
- * /api/auth/verify:
- *   get:
- *     summary: Verify current authentication credentials
- *     tags: [Auth]
- *     security:
- *       - ApiKeyAuth: []
- *       - BearerAuth: []
- *     responses:
- *       200:
- *         description: Auth is valid
- *       401:
- *         description: Unauthorized
+ * GET /api/auth/verify
+ * Verify current credentials and return user/domain context.
  */
-router.get('/verify', require('../middleware/auth').authenticate, (req, res) => {
-  res.json({ valid: true, user: req.user });
+router.get('/verify', authenticate, (req, res) => {
+  res.json({ valid: true, user: req.user, domain: req.domain });
+});
+
+/**
+ * GET /api/auth/domains
+ * Admin only – list all configured domains (keys are redacted).
+ */
+router.get('/domains', authenticate, (req, res) => {
+  if (!req.user?.admin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  res.json({ domains: getConfiguredDomains() });
 });
 
 module.exports = router;
