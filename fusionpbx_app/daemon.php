@@ -49,9 +49,20 @@ if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['token']
 
 // ── Ensure DB connection ──────────────────────────────────────────────────────
 if (empty($db)) {
-    $database = new database;
-    $database->connect();
-    $db = $database->db;
+    if (class_exists('database')) {
+        $db_obj = new database;
+        $db_obj->connect();
+        $db = $db_obj->db ?? $db_obj->connection ?? null;
+    }
+    if (empty($db)) {
+        $conf_file = '/etc/fusionpbx/config.conf';
+        if (file_exists($conf_file)) {
+            $conf = array_map('trim', parse_ini_file($conf_file));
+            $dsn  = "pgsql:host={$conf['host']};port={$conf['port']};dbname={$conf['name']}";
+            $db   = new PDO($dsn, $conf['username'], $conf['password']);
+            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        }
+    }
 }
 
 // ── Load service name from settings ──────────────────────────────────────────
