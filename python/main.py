@@ -136,10 +136,16 @@ async def websocket_endpoint(
     domain: str = Query(None),
 ):
     try:
-        await verify_ws_token(token)
+        user_info = await verify_ws_token(token)
     except Exception:
         await websocket.close(code=4001)
         return
+
+    # Enforce domain from user's account — user-key auth cannot see other domains
+    if user_info.get('source') == 'user':
+        user_domain = user_info.get('domain')
+        if user_domain:
+            domain = user_domain
 
     await ws_service.connect(websocket, domain)
     try:
