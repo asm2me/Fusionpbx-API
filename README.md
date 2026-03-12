@@ -73,7 +73,7 @@ sudo bash fusionpbx_app/install/install.sh
 
 The script will:
 - Install the Python service to `/var/lib/fusionpbx-api-bridge`
-- Create a Python virtualenv and install dependencies
+- Install Python dependencies system-wide via `pip3`
 - Auto-detect DB credentials from `/etc/fusionpbx/config.conf`
 - Copy the PHP module to `/var/www/fusionpbx/app/api_bridge/`
 - Install and start a `systemd` service

@@ -12,7 +12,7 @@ echo "==> Installing FusionPBX API Bridge..."
 
 # ── 1. Python check ───────────────────────────────────────────────────────────
 if ! command -v python3 &>/dev/null; then
-    apt-get install -y python3 python3-pip python3-venv
+    apt-get install -y python3 python3-pip
 fi
 PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 echo "    Python $PY_VER found"
@@ -24,10 +24,9 @@ mkdir -p /var/log/fusionpbx-api-bridge
 # Copy Python source (run from project root)
 cp -r python/* "$INSTALL_DIR/"
 
-# Create virtualenv and install deps
-python3 -m venv "$INSTALL_DIR/venv"
-"$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
-"$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q
+# Install dependencies system-wide
+pip3 install --upgrade pip -q
+pip3 install -r "$INSTALL_DIR/requirements.txt" -q
 
 # ── 3. Minimal .env (DB bootstrap only) ──────────────────────────────────────
 # The rest of the settings come from FusionPBX v_default_settings.
