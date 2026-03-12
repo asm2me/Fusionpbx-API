@@ -35,6 +35,22 @@ class DBService:
             logger.error(f'DB test failed: {e}')
             return False
 
+    async def get_user_by_api_key(self, api_key: str) -> dict | None:
+        """Look up a FusionPBX user by their user_api_key from v_users."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT u.user_uuid, u.username, d.domain_name AS domain
+                FROM v_users u
+                LEFT JOIN v_domains d ON d.domain_uuid = u.domain_uuid
+                WHERE u.user_api_key = $1
+                  AND u.user_enabled = 'true'
+                LIMIT 1
+                """,
+                api_key,
+            )
+        return dict(row) if row else None
+
     async def get_domains(self) -> list:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(

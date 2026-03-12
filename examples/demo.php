@@ -237,7 +237,7 @@ async function apiFetch(path, method = 'GET', body = null) {
 }
 
 async function callAction(uuid, action) {
-    const path = `/api/calls/${uuid}/${action}`;
+    const path = `/calls/${uuid}/${action}`;
     const data = await apiFetch(path, 'POST');
     logEvent({ type: `action.${action}`, data: { uuid, result: data } });
 }
@@ -251,7 +251,7 @@ async function originateCall() {
         alert('From, To, and Domain are required.');
         return;
     }
-    const data = await apiFetch('/api/calls/originate', 'POST', { from, to, domain, callerId });
+    const data = await apiFetch('/calls/originate', 'POST', { from, to, domain, callerId });
     const el = document.getElementById('orig-result');
     if (data.uuid) {
         el.innerHTML = `<div class="alert alert-success">Call initiated — UUID: <code>${data.uuid}</code></div>`;
@@ -262,7 +262,7 @@ async function originateCall() {
 
 async function refreshCalls() {
     const q    = DOMAIN ? `?domain=${DOMAIN}` : '';
-    const data = await apiFetch('/api/calls/active' + q);
+    const data = await apiFetch('/calls/active' + q);
     // Simple reload — in production you'd update the DOM
     location.reload();
 }

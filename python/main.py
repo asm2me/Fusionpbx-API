@@ -136,7 +136,7 @@ async def websocket_endpoint(
     domain: str = Query(None),
 ):
     try:
-        verify_ws_token(token)
+        await verify_ws_token(token)
     except Exception:
         await websocket.close(code=4001)
         return
