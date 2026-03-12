@@ -7,7 +7,18 @@
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 require_once dirname(__DIR__, 2) . "/resources/require.php";
 
-if (!permission_exists('api_bridge_view')) {
+// Auth helper — works with or without App Defaults registration.
+// Checks permission_exists() first (populated after re-login),
+// then falls back to direct session group membership.
+function api_bridge_can(string $perm): bool {
+    if (function_exists('permission_exists') && permission_exists($perm)) {
+        return true;
+    }
+    $groups = $_SESSION['groups'] ?? [];
+    return isset($groups['superadmin']) || isset($groups['admin']);
+}
+
+if (!api_bridge_can('api_bridge_view')) {
     echo "<div class='container-fluid mt-4'><div class='alert alert-danger'>Access denied.</div></div>";
     require_once dirname(__DIR__, 2) . "/resources/footer.php";
     exit;
@@ -117,7 +128,7 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                         </div>
                     </div>
 
-                    <?php if (permission_exists('api_bridge_edit')): ?>
+                    <?php if (api_bridge_can('api_bridge_edit')): ?>
                     <form method="POST" action="daemon.php" class="d-inline">
                         <input type="hidden" name="csrf_token" value="<?= $_SESSION['token'] ?? '' ?>">
 
@@ -183,7 +194,7 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
     </div>
 
     <!-- ── Settings Form ────────────────────────────────────────────────── -->
-    <?php if (permission_exists('api_bridge_edit')): ?>
+    <?php if (api_bridge_can('api_bridge_edit')): ?>
     <form method="POST" action="save.php">
         <input type="hidden" name="csrf_token" value="<?= $_SESSION['token'] ?? '' ?>">
     <?php endif; ?>
@@ -198,7 +209,7 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                         <input type="text" name="esl_host" class="form-control"
                                value="<?= htmlspecialchars($cfg['esl_host'] ?? '127.0.0.1') ?>"
                                placeholder="127.0.0.1"
-                               <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                               <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                         <small class="form-text text-muted"><?= htmlspecialchars($desc['esl_host'] ?? '') ?></small>
                     </div>
                     <div class="form-group col-md-2">
@@ -206,7 +217,7 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                         <input type="number" name="esl_port" class="form-control"
                                value="<?= htmlspecialchars($cfg['esl_port'] ?? '8021') ?>"
                                min="1" max="65535"
-                               <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                               <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                     </div>
                     <div class="form-group col-md-5">
                         <label>ESL Password</label>
@@ -215,7 +226,7 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                                    class="form-control"
                                    value="<?= htmlspecialchars($cfg['esl_password'] ?? '') ?>"
                                    autocomplete="new-password"
-                                   <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                                   <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                             <div class="input-group-append">
                                 <button type="button" class="btn btn-outline-secondary"
                                         onclick="toggleVisibility('esl_password', this)">
@@ -232,14 +243,14 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                         <input type="number" name="esl_reconnect_delay" class="form-control"
                                value="<?= htmlspecialchars($cfg['esl_reconnect_delay'] ?? '5') ?>"
                                min="1" max="60"
-                               <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                               <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                     </div>
                     <div class="form-group col-md-3">
                         <label>Max Reconnect Attempts</label>
                         <input type="number" name="esl_max_reconnect" class="form-control"
                                value="<?= htmlspecialchars($cfg['esl_max_reconnect'] ?? '10') ?>"
                                min="1" max="100"
-                               <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                               <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                     </div>
                 </div>
             </div>
@@ -255,7 +266,7 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                         <input type="number" name="api_port" class="form-control"
                                value="<?= htmlspecialchars($cfg['api_port'] ?? '3000') ?>"
                                min="1024" max="65535"
-                               <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                               <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                         <small class="form-text text-muted"><?= htmlspecialchars($desc['api_port'] ?? '') ?></small>
                     </div>
                     <div class="form-group col-md-5">
@@ -266,13 +277,13 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                                    value="<?= htmlspecialchars($cfg['api_key'] ?? '') ?>"
                                    autocomplete="new-password"
                                    placeholder="Strong random string"
-                                   <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                                   <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                             <div class="input-group-append">
                                 <button type="button" class="btn btn-outline-secondary"
                                         onclick="toggleVisibility('api_key', this)">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <?php if (permission_exists('api_bridge_edit')): ?>
+                                <?php if (api_bridge_can('api_bridge_edit')): ?>
                                 <button type="button" class="btn btn-outline-secondary"
                                         onclick="generateSecret('api_key')">
                                     <i class="fas fa-random"></i>
@@ -287,7 +298,7 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                         <input type="number" name="jwt_expire_hours" class="form-control"
                                value="<?= htmlspecialchars($cfg['jwt_expire_hours'] ?? '24') ?>"
                                min="1" max="8760"
-                               <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                               <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                     </div>
                 </div>
                 <div class="form-row">
@@ -299,13 +310,13 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                                    value="<?= htmlspecialchars($cfg['jwt_secret'] ?? '') ?>"
                                    autocomplete="new-password"
                                    placeholder="Minimum 32 characters"
-                                   <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                                   <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                             <div class="input-group-append">
                                 <button type="button" class="btn btn-outline-secondary"
                                         onclick="toggleVisibility('jwt_secret', this)">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <?php if (permission_exists('api_bridge_edit')): ?>
+                                <?php if (api_bridge_can('api_bridge_edit')): ?>
                                 <button type="button" class="btn btn-outline-secondary"
                                         onclick="generateSecret('jwt_secret')">
                                     <i class="fas fa-random"></i>
@@ -328,14 +339,14 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                         <label>systemd Service Name</label>
                         <input type="text" name="service_name" class="form-control"
                                value="<?= htmlspecialchars($cfg['service_name'] ?? 'fusionpbx-api-bridge') ?>"
-                               <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                               <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                         <small class="form-text text-muted"><?= htmlspecialchars($desc['service_name'] ?? '') ?></small>
                     </div>
                     <div class="form-group col-md-8">
                         <label>Service Path</label>
                         <input type="text" name="service_path" class="form-control"
                                value="<?= htmlspecialchars($cfg['service_path'] ?? '/var/lib/fusionpbx-api-bridge') ?>"
-                               <?= !permission_exists('api_bridge_edit') ? 'readonly' : '' ?>>
+                               <?= !api_bridge_can('api_bridge_edit') ? 'readonly' : '' ?>>
                         <small class="form-text text-muted"><?= htmlspecialchars($desc['service_path'] ?? '') ?></small>
                     </div>
                 </div>
@@ -354,7 +365,7 @@ www-data ALL=(ALL) NOPASSWD: /bin/systemctl show <?= htmlspecialchars($service) 
             </div>
         </div>
 
-        <?php if (permission_exists('api_bridge_edit')): ?>
+        <?php if (api_bridge_can('api_bridge_edit')): ?>
         <div class="mb-4">
             <button type="submit" class="btn btn-primary mr-2">
                 <i class="fas fa-save mr-1"></i>Save Settings
@@ -366,7 +377,7 @@ www-data ALL=(ALL) NOPASSWD: /bin/systemctl show <?= htmlspecialchars($service) 
         </div>
         <?php endif; ?>
 
-    <?php if (permission_exists('api_bridge_edit')): ?>
+    <?php if (api_bridge_can('api_bridge_edit')): ?>
     </form>
     <?php endif; ?>
 

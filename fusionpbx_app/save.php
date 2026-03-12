@@ -6,8 +6,16 @@
 
 require_once dirname(__DIR__, 2) . "/resources/require.php";
 
+function api_bridge_can(string $perm): bool {
+    if (function_exists('permission_exists') && permission_exists($perm)) {
+        return true;
+    }
+    $groups = $_SESSION['groups'] ?? [];
+    return isset($groups['superadmin']) || isset($groups['admin']);
+}
+
 // ── Auth & CSRF ───────────────────────────────────────────────────────────────
-if (!permission_exists('api_bridge_edit')) {
+if (!api_bridge_can('api_bridge_edit')) {
     die(json_encode(['error' => 'Access denied']));
 }
 

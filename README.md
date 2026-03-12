@@ -76,18 +76,11 @@ The script will:
 - Install Python dependencies system-wide via `pip3`
 - Auto-detect DB credentials from `/etc/fusionpbx/config.conf`
 - Copy the PHP module to `/var/www/fusionpbx/app/api_bridge/`
+- Insert default settings, permissions, and menu item directly into the FusionPBX database
 - Install and start a `systemd` service
 - Write the required `sudoers` snippet so FusionPBX can control the daemon
 
-### 2. Register the module in FusionPBX
-
-```
-Admin → App Defaults → [Update]
-```
-
-This inserts the default settings rows and adds **API Bridge** to the Admin menu.
-
-### 3. Configure from FusionPBX UI
+### 2. Configure from FusionPBX UI
 
 Navigate to **Admin → API Bridge** and fill in:
 
