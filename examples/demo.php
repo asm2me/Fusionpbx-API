@@ -3,28 +3,73 @@
  * FusionPBX API Bridge — Live Demo Page
  * Shows REST API calls + real-time WebSocket events in one page.
  *
- * Deploy anywhere that can reach your API server.
- * Set the two constants below before use.
+ * API key is entered in the browser — no hardcoding required.
+ * Use your FusionPBX user API key from Admin → Users → Edit → API Key.
  */
 
 require_once __DIR__ . '/FusionPBXApiClient.php';
 
-const API_URL    = 'http://localhost:3000';    // PHP server-side calls (direct, stays local)
-const API_KEY    = 'your-api-key-here';        // Set in Admin → API Bridge
-const WS_URL     = 'wss://mt.voipat.com';      // Browser WebSocket via Nginx (wss://)
-const API_DOMAIN = '';                         // FusionPBX domain, or '' for all
+const API_URL          = 'http://localhost:3000';
+const WS_URL           = 'wss://mt.voipat.com';
+const BROWSER_API_BASE = '/pbxapi';
 
-// Browser JS uses Nginx reverse proxy path instead of direct port 3000
-const BROWSER_API_BASE = '/pbxapi';           // https://mt.voipat.com/pbxapi/ → port 3000
+// API key: from session cookie (set after login form), or empty
+session_start();
+$inputKey = trim($_POST['api_key'] ?? $_GET['api_key'] ?? $_SESSION['api_key'] ?? '');
+if ($inputKey) {
+    $_SESSION['api_key'] = $inputKey;
+}
+$apiKey    = $_SESSION['api_key'] ?? '';
+$apiDomain = trim($_POST['api_domain'] ?? $_GET['api_domain'] ?? $_SESSION['api_domain'] ?? '');
+if ($apiDomain) {
+    $_SESSION['api_domain'] = $apiDomain;
+}
+$apiDomain = $_SESSION['api_domain'] ?? '';
 
-$api = new FusionPBXApiClient(API_URL, API_KEY);
+// If no key yet, show login form
+if (!$apiKey) {
+    ?><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FusionPBX API Bridge</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+<div class="container" style="max-width:480px;margin-top:10vh">
+    <div class="card shadow-sm">
+        <div class="card-header"><strong>FusionPBX API Bridge</strong></div>
+        <div class="card-body">
+            <form method="post">
+                <div class="mb-3">
+                    <label class="form-label">API Key</label>
+                    <input type="password" name="api_key" class="form-control" required
+                           placeholder="Your FusionPBX user API key">
+                    <div class="form-text">Found in Admin → Users → Edit → API Key</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Domain <span class="text-muted">(optional)</span></label>
+                    <input type="text" name="api_domain" class="form-control"
+                           placeholder="e.g. company.example.com">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Connect</button>
+            </form>
+        </div>
+    </div>
+</div>
+</body></html><?php
+    exit;
+}
+
+$api = new FusionPBXApiClient(API_URL, $apiKey);
 
 // ── REST calls (server-side) ──────────────────────────────────────────────────
 $status      = $api->getDetailedStatus();
-$activeCalls = $api->getActiveCalls(API_DOMAIN);
-$extensions  = $api->getExtensions(API_DOMAIN);
-$cdrStats    = $api->getCdrStats(array_filter(['domain' => API_DOMAIN]));
-$recentCdr   = $api->getCdr(array_filter(['domain' => API_DOMAIN, 'limit' => 10]));
+$activeCalls = $api->getActiveCalls($apiDomain);
+$extensions  = $api->getExtensions($apiDomain);
+$cdrStats    = $api->getCdrStats(array_filter(['domain' => $apiDomain]));
+$recentCdr   = $api->getCdr(array_filter(['domain' => $apiDomain, 'limit' => 10]));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -50,7 +95,16 @@ $recentCdr   = $api->getCdr(array_filter(['domain' => API_DOMAIN, 'limit' => 10]
 </head>
 <body>
 <div class="container-fluid py-4">
-<h2 class="mb-4">FusionPBX API Bridge <small class="text-muted fs-5">Live Demo</small></h2>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0">FusionPBX API Bridge <small class="text-muted fs-5">Live Demo</small></h2>
+    <div class="d-flex align-items-center gap-3">
+        <?php if ($apiDomain): ?>
+        <span class="text-muted small">Domain: <strong><?= htmlspecialchars($apiDomain) ?></strong></span>
+        <?php endif; ?>
+        <a href="?logout=1" class="btn btn-sm btn-outline-secondary">Logout</a>
+    </div>
+</div>
+<?php if (isset($_GET['logout'])) { session_destroy(); header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?')); exit; } ?>
 
 <!-- ── Status Row ──────────────────────────────────────────────────────────── -->
 <div class="row">
@@ -221,9 +275,9 @@ $recentCdr   = $api->getCdr(array_filter(['domain' => API_DOMAIN, 'limit' => 10]
 <!-- ── AJAX call control ───────────────────────────────────────────────────── -->
 <script>
 const API_BASE = '<?= BROWSER_API_BASE ?>';  // /pbxapi → Nginx → port 3000
-const API_KEY  = '<?= API_KEY ?>';
+const API_KEY  = '<?= htmlspecialchars($apiKey, ENT_QUOTES) ?>';
 const WS_URL   = '<?= WS_URL ?>';
-const DOMAIN   = '<?= API_DOMAIN ?>';
+const DOMAIN   = '<?= htmlspecialchars($apiDomain, ENT_QUOTES) ?>';
 
 // ── REST helpers ──────────────────────────────────────────────────────────────
 async function apiFetch(path, method = 'GET', body = null) {
