@@ -43,7 +43,7 @@ class DBService:
                 SELECT u.user_uuid, u.username, d.domain_name AS domain
                 FROM v_users u
                 LEFT JOIN v_domains d ON d.domain_uuid = u.domain_uuid
-                WHERE u.user_api_key = $1
+                WHERE u.api_key = $1
                   AND u.user_enabled = 'true'
                 LIMIT 1
                 """,
