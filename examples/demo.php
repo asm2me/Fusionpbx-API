@@ -428,6 +428,8 @@ function logRaw(msg) {
 }
 
 connectWebSocket();
+refreshCalls();
+setInterval(refreshCalls, 10000);
 </script>
 </body>
 </html>
