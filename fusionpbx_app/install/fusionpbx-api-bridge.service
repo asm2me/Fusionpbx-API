@@ -1,0 +1,38 @@
+[Unit]
+Description=FusionPBX API Bridge (Python/FastAPI)
+Documentation=https://github.com
+After=network.target postgresql.service freeswitch.service
+Wants=postgresql.service freeswitch.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/lib/fusionpbx-api-bridge
+
+# The Python venv is expected at /var/lib/fusionpbx-api-bridge/venv
+ExecStart=/var/lib/fusionpbx-api-bridge/venv/bin/python main.py
+
+# Restart on failure with exponential back-off cap
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Environment — only the DB bootstrap is needed here.
+# All other settings are loaded from FusionPBX v_default_settings at runtime.
+EnvironmentFile=-/var/lib/fusionpbx-api-bridge/.env
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/fusionpbx-api-bridge /var/log/fusionpbx-api-bridge
+
+# Logging — output goes to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fusionpbx-api-bridge
+
+[Install]
+WantedBy=multi-user.target
