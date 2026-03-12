@@ -9,10 +9,13 @@
 
 require_once __DIR__ . '/FusionPBXApiClient.php';
 
-const API_URL    = 'http://localhost:3000';   // Your API Bridge URL
-const API_KEY    = 'your-api-key-here';       // Set in Admin → API Bridge
-const WS_URL     = 'ws://localhost:3000';     // WebSocket URL (same host, ws:// or wss://)
-const API_DOMAIN = '';                        // FusionPBX domain, or '' for all
+const API_URL    = 'http://localhost:3000';    // PHP server-side calls (direct, stays local)
+const API_KEY    = 'your-api-key-here';        // Set in Admin → API Bridge
+const WS_URL     = 'wss://mt.voipat.com';      // Browser WebSocket via Nginx (wss://)
+const API_DOMAIN = '';                         // FusionPBX domain, or '' for all
+
+// Browser JS uses Nginx reverse proxy path instead of direct port 3000
+const BROWSER_API_BASE = '/pbxapi';           // https://mt.voipat.com/pbxapi/ → port 3000
 
 $api = new FusionPBXApiClient(API_URL, API_KEY);
 
@@ -217,7 +220,7 @@ $recentCdr   = $api->getCdr(array_filter(['domain' => API_DOMAIN, 'limit' => 10]
 
 <!-- ── AJAX call control ───────────────────────────────────────────────────── -->
 <script>
-const API_BASE = '<?= API_URL ?>';
+const API_BASE = '<?= BROWSER_API_BASE ?>';  // /pbxapi → Nginx → port 3000
 const API_KEY  = '<?= API_KEY ?>';
 const WS_URL   = '<?= WS_URL ?>';
 const DOMAIN   = '<?= API_DOMAIN ?>';
