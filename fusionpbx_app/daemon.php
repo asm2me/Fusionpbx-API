@@ -47,6 +47,13 @@ if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['token']
     exit;
 }
 
+// ── Ensure DB connection ──────────────────────────────────────────────────────
+if (empty($db)) {
+    $database = new database;
+    $database->connect();
+    $db = $database->db;
+}
+
 // ── Load service name from settings ──────────────────────────────────────────
 $sql = "SELECT default_setting_value FROM v_default_settings
         WHERE default_setting_category    = 'api_bridge'

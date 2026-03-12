@@ -42,6 +42,13 @@ if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['token']
     exit;
 }
 
+// ── Ensure DB connection ──────────────────────────────────────────────────────
+if (empty($db)) {
+    $database = new database;
+    $database->connect();
+    $db = $database->db;
+}
+
 // ── Fields to save ────────────────────────────────────────────────────────────
 $fields = [
     'esl_host'           => ['type' => 'text',    'max' => 253],

@@ -39,6 +39,13 @@ if (!api_bridge_can('api_bridge_view')) {
     exit;
 }
 
+// ── Ensure DB connection ──────────────────────────────────────────────────────
+if (empty($db)) {
+    $database = new database;
+    $database->connect();
+    $db = $database->db;
+}
+
 // ── Load all api_bridge settings from v_default_settings ─────────────────────
 $sql = "SELECT default_setting_subcategory, default_setting_value, default_setting_description
         FROM v_default_settings
