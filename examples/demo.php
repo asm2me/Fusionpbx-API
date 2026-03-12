@@ -277,7 +277,7 @@ const wsLogEl    = document.getElementById('ws-log');
 
 function connectWebSocket() {
     const q  = DOMAIN ? `&domain=${DOMAIN}` : '';
-    const ws = new WebSocket(`${WS_URL}/ws?token=${API_KEY}${q}`);
+    const ws = new WebSocket(`${WS_URL}/ws?token=${encodeURIComponent(API_KEY)}${q}`);
 
     ws.onopen = () => {
         wsStatusEl.textContent  = 'Connected';
