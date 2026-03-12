@@ -14,7 +14,18 @@ function api_bridge_can(string $perm): bool {
         return true;
     }
     $groups = $_SESSION['groups'] ?? [];
-    return isset($groups['superadmin']) || isset($groups['admin']);
+    if (isset($groups['superadmin']) || isset($groups['admin'])) {
+        return true;
+    }
+    if (!empty($_SESSION['user_uuid'])) {
+        foreach ($groups as $key => $val) {
+            $name = is_array($val) ? ($val['group_name'] ?? $key) : $key;
+            if ($name === 'superadmin' || $name === 'admin') {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // ── Auth & CSRF ───────────────────────────────────────────────────────────────

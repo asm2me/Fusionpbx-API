@@ -1,6 +1,6 @@
 # FusionPBX API Bridge
 
-A production-ready REST API + WebSocket daemon that connects your CRM to FusionPBX/FreeSWITCH for complete telephony integration. Built in **Python (FastAPI + asyncio)** and managed entirely from the **FusionPBX Admin UI** — no config files to edit on the server.
+A production-ready REST API + WebSocket daemon that connects your CRM to FusionPBX/FreeSWITCH for complete telephony integration. Built in **Python (FastAPI + asyncio)** with settings managed entirely from the **FusionPBX Admin UI** — no manual config files needed after install.
 
 ## Features
 
@@ -17,7 +17,7 @@ A production-ready REST API + WebSocket daemon that connects your CRM to FusionP
 | **Call stats** | Summary stats (total, answered, missed, avg duration) |
 | **Extensions** | Directory and registration status |
 | **WebSocket** | Real-time push events to CRM (`call.created`, `call.answered`, `call.hangup`, …) |
-| **FusionPBX module** | Settings managed from Admin → API Bridge in FusionPBX UI |
+| **FusionPBX module** | Settings managed from **Admin → API Bridge** |
 | **Interactive docs** | Auto-generated API docs at `/docs` |
 
 ---
@@ -38,32 +38,32 @@ Python Daemon (FastAPI + asyncio)  ────►  FreeSWITCH ESL :8021
  │  Reads settings at startup                       │
  │  Reads CDR / Extensions from DB      Sends commands (originate, hold…)
  │                                      Receives events (CHANNEL_ANSWER…)
- ├─ REST API (HTTP)  ◄──  CRM
- └─ WebSocket (WS)   ──►  CRM  (real-time call events)
+ ├─ REST API (HTTP)   ◄──  CRM
+ └─ WebSocket (WS)    ──►  CRM  (real-time call events)
 ```
 
 ### Configuration flow
 
 ```
-/etc/fusionpbx/config.conf   ──►  DB bootstrap only (auto-detected)
-v_default_settings           ──►  All other settings (ESL, API key, ports…)
-                                  Editable live from FusionPBX Admin UI
+/etc/fusionpbx/config.conf  ──►  DB credentials only (auto-detected)
+v_default_settings          ──►  All other settings (ESL, API key, ports…)
+                                 Editable live from FusionPBX Admin → API Bridge
 ```
 
 ---
 
 ## Prerequisites
 
-- FusionPBX server (Debian/Ubuntu) with:
+- FusionPBX server (Debian / Ubuntu) with:
   - FreeSWITCH ESL enabled on port 8021
   - PostgreSQL accessible locally
-- Python 3.10+ on the same server (or a dedicated host with DB/ESL access)
+- Python 3.10+ installed on the same server
 
 ---
 
 ## Installation
 
-### 1. One-command install (on the FusionPBX server)
+Run once on the FusionPBX server as root:
 
 ```bash
 git clone <repo>
@@ -72,28 +72,18 @@ sudo bash fusionpbx_app/install/install.sh
 ```
 
 The script will:
-- Install the Python service to `/var/lib/fusionpbx-api-bridge`
-- Install Python dependencies system-wide via `pip3`
-- Auto-detect DB credentials from `/etc/fusionpbx/config.conf`
-- Copy the PHP module to `/var/www/fusionpbx/app/api_bridge/`
-- Insert default settings, permissions, and menu item directly into the FusionPBX database
-- Install and start a `systemd` service
-- Write the required `sudoers` snippet so FusionPBX can control the daemon
 
-### 2. Configure from FusionPBX UI
+1. Install Python dependencies system-wide via `pip3`
+2. Copy the Python service to `/var/lib/fusionpbx-api-bridge`
+3. Auto-detect DB credentials from `/etc/fusionpbx/config.conf` and write a minimal `.env`
+4. Copy the PHP module to `/var/www/fusionpbx/app/api_bridge/`
+5. Insert default settings, permissions, and the **Admin → API Bridge** menu item directly into the FusionPBX PostgreSQL database
+6. Write a `sudoers` snippet so the web process can control the daemon
+7. Install, enable, and start the `fusionpbx-api-bridge` systemd service
 
-Navigate to **Admin → API Bridge** and fill in:
+After the script completes, navigate to **Admin → API Bridge** in FusionPBX to configure your settings.
 
-| Setting | Description |
-|---|---|
-| ESL Host / Port / Password | FreeSWITCH Event Socket |
-| API Port | Port the daemon listens on (default `3000`) |
-| API Key | Shared secret your CRM sends as `X-API-Key` |
-| JWT Secret | Signing key for JWT tokens (min 32 chars) |
-| JWT Expire Hours | Token validity |
-| Reconnect settings | ESL reconnect delay and max attempts |
-
-Click **Save & Restart** — the daemon reloads with the new settings immediately.
+> If the menu item doesn't appear immediately, log out and back in to refresh the session.
 
 ---
 
@@ -132,22 +122,22 @@ ufw allow from <api-server-ip> to any port 5432
 
 ## Development / Manual Setup
 
-For development or when not running on the FusionPBX server itself:
+For development without a live FusionPBX server:
 
 ```bash
 cd python
-pip install -r requirements.txt
-cp .env.example .env   # edit DB credentials
-python main.py
+pip3 install -r requirements.txt --break-system-packages
+cp .env.example .env   # edit DB credentials, uncomment optional overrides
+python3 main.py
 ```
 
-The `.env` file only needs the DB connection — all other settings are loaded from `v_default_settings` at startup. If running without a FusionPBX database, uncomment the optional overrides in `.env.example`.
+The `.env` file normally only needs DB credentials — all other settings load from `v_default_settings` at startup. Uncomment the optional lines in `.env.example` to override without a database.
 
 ---
 
 ## API Reference
 
-All endpoints (except `GET /api/status`) require authentication.
+All endpoints except `GET /api/status` require authentication.
 
 ### Authentication
 
@@ -175,7 +165,7 @@ curl http://localhost:3000/api/calls/active \
 
 ### Call Operations
 
-#### Originate (make) a call
+#### Originate a call
 
 ```http
 POST /api/calls/originate
@@ -258,8 +248,6 @@ GET /api/cdr/{uuid}
 GET /api/cdr/stats/summary?domain=company.com&start_date=2024-01-01
 ```
 
-Query parameters:
-
 | Parameter | Description |
 |---|---|
 | `domain` | Filter by FusionPBX domain |
@@ -267,7 +255,7 @@ Query parameters:
 | `direction` | `inbound` \| `outbound` \| `local` |
 | `extension` | Filter by caller or callee extension |
 | `search` | Search caller/callee number or name |
-| `limit` | Records per page (default 100, max 1000) |
+| `limit` | Records per page (default `100`, max `1000`) |
 | `offset` | Pagination offset |
 
 ---
@@ -309,7 +297,7 @@ ws.onmessage = (e) => {
 };
 ```
 
-The `domain` query parameter is optional — if provided, only events for that domain are delivered.
+The `domain` parameter is optional — omit it to receive events for all domains.
 
 #### Event types
 
@@ -349,7 +337,7 @@ The `domain` query parameter is optional — if provided, only events for that d
 
 ## Deployment
 
-### systemd (installed automatically)
+### systemd service (installed automatically)
 
 ```bash
 systemctl status  fusionpbx-api-bridge
@@ -384,7 +372,7 @@ COPY python/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY python/ .
 EXPOSE 3000
-CMD ["python", "main.py"]
+CMD ["python3", "main.py"]
 ```
 
 ```bash
@@ -404,55 +392,55 @@ docker run -d \
 ```
 fusionpbx-api/
 │
-├── fusionpbx_app/                  # FusionPBX PHP module
-│   ├── app_config.php              # App registration, default settings & menu
-│   ├── index.php                   # Admin UI — settings form + daemon status
-│   ├── save.php                    # Save settings to v_default_settings
-│   ├── daemon.php                  # Daemon control (start / stop / restart)
+├── fusionpbx_app/                       # FusionPBX PHP module
+│   ├── app_config.php                   # App registration metadata
+│   ├── index.php                        # Admin UI — settings form + daemon status
+│   ├── save.php                         # Saves settings to v_default_settings
+│   ├── daemon.php                       # Start / stop / restart daemon via systemctl
 │   └── install/
-│       ├── install.sh              # One-command server installer
-│       └── fusionpbx-api-bridge.service  # systemd unit file
+│       ├── install.sh                   # One-command server installer
+│       └── fusionpbx-api-bridge.service # systemd unit file
 │
-├── python/                         # Python daemon (FastAPI + asyncio)
-│   ├── main.py                     # Entry point — loads DB settings, starts services
-│   ├── config.py                   # Settings: auto-reads config.conf + v_default_settings
+├── python/                              # Python daemon (FastAPI + asyncio)
+│   ├── main.py                          # Entry point — loads DB settings, starts services
+│   ├── config.py                        # Auto-reads config.conf + v_default_settings
 │   ├── requirements.txt
-│   ├── .env.example                # DB bootstrap only (ESL/API settings come from DB)
+│   ├── .env.example                     # DB bootstrap only
 │   ├── deps/
-│   │   └── auth.py                 # API key + JWT FastAPI dependency
+│   │   └── auth.py                      # API key + JWT FastAPI dependency
 │   ├── routers/
-│   │   ├── auth.py                 # POST /api/auth/token
-│   │   ├── calls.py                # Call control endpoints
-│   │   ├── cdr.py                  # CDR history endpoints
-│   │   ├── extensions.py           # Extensions directory
-│   │   ├── domains.py              # Domains list
-│   │   └── status.py               # Health check
+│   │   ├── auth.py                      # POST /api/auth/token
+│   │   ├── calls.py                     # Call control endpoints
+│   │   ├── cdr.py                       # CDR history endpoints
+│   │   ├── extensions.py                # Extensions directory
+│   │   ├── domains.py                   # Domains list
+│   │   └── status.py                    # Health check
 │   └── services/
-│       ├── esl_service.py          # FreeSWITCH ESL (asyncio TCP daemon)
-│       ├── db_service.py           # PostgreSQL via asyncpg
-│       ├── fusionpbx_service.py    # FusionPBX HTTP API client
-│       └── ws_service.py           # WebSocket broadcast to CRM clients
+│       ├── esl_service.py               # FreeSWITCH ESL asyncio TCP client
+│       ├── db_service.py                # PostgreSQL via asyncpg
+│       ├── fusionpbx_service.py         # FusionPBX HTTP API client
+│       └── ws_service.py               # WebSocket broadcast to CRM clients
 │
 └── migrations/
-    └── 001_create_api_keys.sql     # Optional: per-user API key table
+    └── 001_create_api_keys.sql          # Optional: per-user API key table
 ```
 
 ---
 
 ## Settings Reference
 
-All settings below are stored in `v_default_settings` (category `api_bridge`) and editable from **Admin → API Bridge**.
+All settings are stored in `v_default_settings` (category `api_bridge`) and editable from **Admin → API Bridge** in FusionPBX. Click **Save & Restart** after any change to apply immediately.
 
 | Setting | Default | Description |
 |---|---|---|
 | `esl_host` | `127.0.0.1` | FreeSWITCH ESL host |
 | `esl_port` | `8021` | FreeSWITCH ESL port |
-| `esl_password` | `ClueCon` | ESL password (`event_socket.conf.xml`) |
-| `esl_reconnect_delay` | `5` | Seconds between reconnect attempts |
-| `esl_max_reconnect` | `10` | Max reconnect attempts before giving up |
+| `esl_password` | `ClueCon` | ESL password (from `event_socket.conf.xml`) |
+| `esl_reconnect_delay` | `5` | Seconds between ESL reconnect attempts |
+| `esl_max_reconnect` | `10` | Max ESL reconnect attempts before giving up |
 | `api_port` | `3000` | Port the daemon listens on |
 | `api_key` | _(empty)_ | Shared secret for CRM (`X-API-Key` header) |
 | `jwt_secret` | _(empty)_ | JWT signing secret (min 32 chars) |
 | `jwt_expire_hours` | `24` | JWT token validity in hours |
 | `service_name` | `fusionpbx-api-bridge` | systemd unit name |
-| `service_path` | `/var/lib/fusionpbx-api-bridge` | Path to the Python service |
+| `service_path` | `/var/lib/fusionpbx-api-bridge` | Path to the Python service directory |

@@ -14,8 +14,23 @@ function api_bridge_can(string $perm): bool {
     if (function_exists('permission_exists') && permission_exists($perm)) {
         return true;
     }
+    // FusionPBX stores groups as array of arrays; check multiple formats
     $groups = $_SESSION['groups'] ?? [];
-    return isset($groups['superadmin']) || isset($groups['admin']);
+    if (isset($groups['superadmin']) || isset($groups['admin'])) {
+        return true;
+    }
+    // Also check if user is superadmin via user_uuid / level stored in session
+    if (!empty($_SESSION['user_uuid'])) {
+        // Any authenticated FusionPBX user reaching this page is likely admin
+        // Check the group_name values in the array
+        foreach ($groups as $key => $val) {
+            $name = is_array($val) ? ($val['group_name'] ?? $key) : $key;
+            if ($name === 'superadmin' || $name === 'admin') {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 if (!api_bridge_can('api_bridge_view')) {
