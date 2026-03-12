@@ -155,7 +155,7 @@ if __name__ == '__main__':
     import uvicorn
     uvicorn.run(
         'main:app',
-        host='0.0.0.0',
+        host='127.0.0.1',
         port=settings.port,
         reload=settings.env == 'development',
         log_level='debug' if settings.env == 'development' else 'info',
