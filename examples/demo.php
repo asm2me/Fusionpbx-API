@@ -111,7 +111,7 @@ $recentCdr   = $api->getCdr(array_filter(['domain' => $apiDomain, 'limit' => 10]
     <div class="col-md-3">
         <div class="card">
             <div class="card-body text-center">
-                <div class="fs-4 fw-bold"><?= $activeCalls['count'] ?? 0 ?></div>
+                <div class="fs-4 fw-bold" id="active-calls-count"><?= $activeCalls['count'] ?? 0 ?></div>
                 <div class="text-muted">Active Calls</div>
             </div>
         </div>
@@ -314,11 +314,41 @@ async function originateCall() {
     }
 }
 
+function renderCallsTable(data) {
+    const el = document.getElementById('active-calls-table');
+    document.getElementById('active-calls-count').textContent = data.count ?? 0;
+    if (!data.calls || data.calls.length === 0) {
+        el.innerHTML = '<p class="text-muted p-3 mb-0">No active calls.</p>';
+        return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const rows = data.calls.map(c => {
+        const dur = c.created_epoch ? new Date((now - c.created_epoch) * 1000).toISOString().substr(11, 8) : '—';
+        return `<tr>
+            <td><code>${c.uuid.substr(0,8)}…</code></td>
+            <td>${c.cid_num ?? ''}</td>
+            <td>${c.dest ?? ''}</td>
+            <td>${c.direction ?? ''}</td>
+            <td><span class="badge bg-success">${c.callstate ?? ''}</span></td>
+            <td>${dur}</td>
+            <td>
+                <button class="btn btn-sm btn-warning"  onclick="callAction('${c.uuid}','hold')">Hold</button>
+                <button class="btn btn-sm btn-info"     onclick="callAction('${c.uuid}','unhold')">Unhold</button>
+                <button class="btn btn-sm btn-danger"   onclick="callAction('${c.uuid}','hangup')">Hangup</button>
+            </td>
+        </tr>`;
+    }).join('');
+    el.innerHTML = `<table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr>
+            <th>UUID</th><th>From</th><th>To</th><th>Direction</th>
+            <th>State</th><th>Duration</th><th>Actions</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 async function refreshCalls() {
     const q    = DOMAIN ? `?domain=${DOMAIN}` : '';
     const data = await apiFetch('/calls/active' + q);
-    // Simple reload — in production you'd update the DOM
-    location.reload();
+    renderCallsTable(data);
 }
 
 function clearLog() {

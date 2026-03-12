@@ -18,6 +18,7 @@ A production-ready REST API + WebSocket daemon that connects your CRM to FusionP
 | **Extensions** | Directory and registration status |
 | **WebSocket** | Real-time push events to CRM (`call.created`, `call.answered`, `call.hangup`, …) |
 | **FusionPBX module** | Settings managed from **Admin → API Bridge** |
+| **FusionPBX user auth** | Authenticate with any user's API key from **Admin → Users → Edit → API Key** |
 | **Interactive docs** | Auto-generated API docs at `/docs` |
 
 ---
@@ -31,15 +32,19 @@ FusionPBX Admin UI
  │
  ▼
 FusionPBX PostgreSQL ◄────────────────────────────┐
- │  (CDR / Extensions / Settings)                  │
+ │  (CDR / Extensions / Settings / User API Keys)  │
  │                                                  │
  ▼                                                  │
 Python Daemon (FastAPI + asyncio)  ────►  FreeSWITCH ESL :8021
  │  Reads settings at startup                       │
  │  Reads CDR / Extensions from DB      Sends commands (originate, hold…)
  │                                      Receives events (CHANNEL_ANSWER…)
- ├─ REST API (HTTP)   ◄──  CRM
- └─ WebSocket (WS)    ──►  CRM  (real-time call events)
+ ├─ REST API  ◄──  CRM / Browser (via Nginx /pbxapi/)
+ └─ WebSocket ──►  CRM / Browser (via Nginx /ws, wss://)
+
+Nginx (SSL termination)
+ ├─ /pbxapi/  →  http://127.0.0.1:3000/api/   (REST over HTTPS)
+ └─ /ws       →  http://127.0.0.1:3000/ws     (WebSocket over WSS)
 ```
 
 ### Configuration flow
@@ -48,6 +53,8 @@ Python Daemon (FastAPI + asyncio)  ────►  FreeSWITCH ESL :8021
 /etc/fusionpbx/config.conf  ──►  DB credentials only (auto-detected)
 v_default_settings          ──►  All other settings (ESL, API key, ports…)
                                  Editable live from FusionPBX Admin → API Bridge
+v_users.api_key             ──►  Per-user authentication key
+                                 Set in Admin → Users → Edit → API Key
 ```
 
 ---
@@ -55,9 +62,10 @@ v_default_settings          ──►  All other settings (ESL, API key, ports�
 ## Prerequisites
 
 - FusionPBX server (Debian / Ubuntu) with:
-  - FreeSWITCH ESL enabled on port 8021
+  - FreeSWITCH ESL enabled on port 8021 with `apply-inbound-acl` set to `loopback.auto`
   - PostgreSQL accessible locally
 - Python 3.10+ installed on the same server
+- Nginx with SSL (for WSS and HTTPS access)
 
 ---
 
@@ -91,9 +99,7 @@ After the script completes, navigate to **Admin → API Bridge** in FusionPBX to
 
 ### Enable ESL (Event Socket)
 
-```bash
-nano /etc/freeswitch/autoload_configs/event_socket.conf.xml
-```
+Edit `/etc/freeswitch/autoload_configs/event_socket.conf.xml`:
 
 ```xml
 <configuration name="event_socket.conf" description="Socket Client">
@@ -107,22 +113,50 @@ nano /etc/freeswitch/autoload_configs/event_socket.conf.xml
 </configuration>
 ```
 
+Then reload:
+
 ```bash
-fs_cli -x "reload mod_event_socket"
+systemctl restart freeswitch
 ```
 
-### Firewall (if daemon runs on a separate host)
+> **Important:** Use `loopback.auto` (not `lan`) for the ACL — `lan` blocks loopback connections on many systems.
+
+### Nginx — WSS and HTTPS Proxy
+
+Add these two locations to your **SSL (443) server block** in `/etc/nginx/sites-enabled/fusionpbx`:
+
+```nginx
+# API Bridge WebSocket (wss://your-server/ws)
+location /ws {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_read_timeout 3600s;
+}
+
+# API Bridge REST (https://your-server/pbxapi/)
+# Uses /pbxapi/ to avoid conflict with FusionPBX's own /api/ rewrite rule
+location /pbxapi/ {
+    proxy_pass http://127.0.0.1:3000/api/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+}
+```
+
+Then reload Nginx:
 
 ```bash
-ufw allow from <api-server-ip> to any port 8021
-ufw allow from <api-server-ip> to any port 5432
+nginx -t && systemctl reload nginx
 ```
 
 ---
 
 ## Development / Manual Setup
-
-For development without a live FusionPBX server:
 
 ```bash
 cd python
@@ -131,37 +165,64 @@ cp .env.example .env   # edit DB credentials, uncomment optional overrides
 python3 main.py
 ```
 
-The `.env` file normally only needs DB credentials — all other settings load from `v_default_settings` at startup. Uncomment the optional lines in `.env.example` to override without a database.
+The `.env` file normally only needs DB credentials — all other settings load from `v_default_settings` at startup.
+
+---
+
+## Authentication
+
+All endpoints except `GET /api/status` require authentication.
+
+### Two ways to authenticate
+
+**Option A — FusionPBX User API Key** (recommended):
+
+Use the API key from your FusionPBX user profile — **Admin → Users → Edit → API Key**.
+
+```http
+GET /api/calls/active
+X-API-Key: RVmt4TQhbBMZZ5a63QD4SuxcbzfRV3N5
+```
+
+Each FusionPBX user can use their own key. The API bridge looks up the key in `v_users.api_key` and authenticates accordingly.
+
+**Option B — Global API Key**:
+
+Set in **Admin → API Bridge → API Key**. Stored in `v_default_settings`. Use for server-to-server integration where a per-user key isn't needed.
+
+```http
+GET /api/calls/active
+X-API-Key: your-global-api-key
+```
+
+**Option C — JWT Bearer Token**:
+
+```bash
+# Exchange API key for a JWT
+curl -X POST https://your-server/pbxapi/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your-key", "domain": "company.com"}'
+
+# Use the returned token
+curl https://your-server/pbxapi/calls/active \
+  -H "Authorization: Bearer eyJ..."
+```
+
+### WebSocket Authentication
+
+Pass the API key (user or global) as the `token` query parameter:
+
+```javascript
+// From browser (via Nginx WSS proxy)
+const ws = new WebSocket('wss://your-server/ws?token=your-api-key&domain=company.com');
+
+// Direct (server-side / development)
+const ws = new WebSocket('ws://localhost:3000/ws?token=your-api-key&domain=company.com');
+```
 
 ---
 
 ## API Reference
-
-All endpoints except `GET /api/status` require authentication.
-
-### Authentication
-
-**Option A — API Key** (recommended for server-to-server):
-
-```http
-GET /api/calls/active
-X-API-Key: your-api-key
-```
-
-**Option B — JWT Bearer Token**:
-
-```bash
-# Exchange API key for a JWT
-curl -X POST http://localhost:3000/api/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"api_key": "your-api-key", "domain": "company.com"}'
-
-# Use the returned token
-curl http://localhost:3000/api/calls/active \
-  -H "Authorization: Bearer eyJ..."
-```
-
----
 
 ### Call Operations
 
@@ -282,14 +343,8 @@ GET /api/status/detailed   # ESL + DB + WS client counts (auth required)
 
 ### WebSocket — Real-Time Events
 
-Connect from your CRM:
-
 ```javascript
-// API key auth
-const ws = new WebSocket('ws://localhost:3000/ws?token=your-api-key&domain=company.com');
-
-// JWT auth
-const ws = new WebSocket('ws://localhost:3000/ws?token=eyJ...&domain=company.com');
+const ws = new WebSocket('wss://your-server/ws?token=your-api-key&domain=company.com');
 
 ws.onmessage = (e) => {
   const { type, timestamp, data } = JSON.parse(e.data);
@@ -335,6 +390,30 @@ The `domain` parameter is optional — omit it to receive events for all domains
 
 ---
 
+## Live Demo Page
+
+A ready-to-use demo page is included at `examples/demo.php`. It shows:
+
+- Active calls table with call controls (hangup, hold, transfer)
+- CDR history
+- WebSocket live event log
+- Originate call form
+
+### Deploy
+
+```bash
+mkdir -p /var/www/fusionpbx/app/api_bridge/examples
+cp examples/demo.php /var/www/fusionpbx/app/api_bridge/examples/
+cp examples/FusionPBXApiClient.php /var/www/fusionpbx/app/api_bridge/examples/
+chown -R www-data:www-data /var/www/fusionpbx/app/api_bridge/examples/
+```
+
+Access at: `https://your-server/app/api_bridge/examples/demo.php`
+
+The page shows a login form on first visit. Enter your FusionPBX user API key (**Admin → Users → Edit → API Key**) and optionally a domain, then click **Connect**.
+
+---
+
 ## Deployment
 
 ### systemd service (installed automatically)
@@ -345,45 +424,16 @@ systemctl restart fusionpbx-api-bridge
 journalctl -u fusionpbx-api-bridge -f
 ```
 
-### Nginx Reverse Proxy (optional)
+### Troubleshooting
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name pbx-api.company.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade    $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host       $host;
-        proxy_set_header X-Real-IP  $remote_addr;
-    }
-}
-```
-
-### Docker
-
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY python/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY python/ .
-EXPOSE 3000
-CMD ["python3", "main.py"]
-```
-
-```bash
-docker build -t fusionpbx-api-bridge .
-docker run -d \
-  -p 3000:3000 \
-  -e DB_HOST=your-db-host \
-  -e DB_PASSWORD=your-db-password \
-  --name fusionpbx-api-bridge \
-  fusionpbx-api-bridge
-```
+| Problem | Cause | Fix |
+|---|---|---|
+| ESL `rude-rejection` | ACL blocking loopback | Change `apply-inbound-acl` to `loopback.auto` in `event_socket.conf.xml`, restart FreeSWITCH |
+| DB auth failed | Wrong password in `.env` | Check `grep password /etc/fusionpbx/config.conf` and update `/var/lib/fusionpbx-api-bridge/.env` |
+| 401 Invalid API key | Key not in DB | Verify key exists in `v_users.api_key` or `v_default_settings` where `subcategory='api_key'` |
+| `sudo` password required | Sudoers file missing | Create `/etc/sudoers.d/fusionpbx-api-bridge` (see installation section) |
+| Port 3000 unreachable | Provider-level firewall | Use Nginx proxy on 443 (`/pbxapi/` and `/ws`) instead of direct port 3000 |
+| WebSocket fragment error | Special chars in API key | Browser URL-encodes the token automatically via `encodeURIComponent()` |
 
 ---
 
@@ -407,7 +457,7 @@ fusionpbx-api/
 │   ├── requirements.txt
 │   ├── .env.example                     # DB bootstrap only
 │   ├── deps/
-│   │   └── auth.py                      # API key + JWT FastAPI dependency
+│   │   └── auth.py                      # API key + JWT auth (global key, user key, JWT)
 │   ├── routers/
 │   │   ├── auth.py                      # POST /api/auth/token
 │   │   ├── calls.py                     # Call control endpoints
@@ -417,12 +467,14 @@ fusionpbx-api/
 │   │   └── status.py                    # Health check
 │   └── services/
 │       ├── esl_service.py               # FreeSWITCH ESL asyncio TCP client
-│       ├── db_service.py                # PostgreSQL via asyncpg
+│       ├── db_service.py                # PostgreSQL via asyncpg (incl. user API key lookup)
 │       ├── fusionpbx_service.py         # FusionPBX HTTP API client
 │       └── ws_service.py               # WebSocket broadcast to CRM clients
 │
-└── migrations/
-    └── 001_create_api_keys.sql          # Optional: per-user API key table
+└── examples/
+    ├── demo.php                         # Live demo page (REST + WebSocket)
+    ├── FusionPBXApiClient.php           # PHP client class for REST API
+    └── fusionpbx.nginx.conf             # Nginx config with /ws and /pbxapi/ proxy
 ```
 
 ---
@@ -439,8 +491,10 @@ All settings are stored in `v_default_settings` (category `api_bridge`) and edit
 | `esl_reconnect_delay` | `5` | Seconds between ESL reconnect attempts |
 | `esl_max_reconnect` | `10` | Max ESL reconnect attempts before giving up |
 | `api_port` | `3000` | Port the daemon listens on |
-| `api_key` | _(empty)_ | Shared secret for CRM (`X-API-Key` header) |
+| `api_key` | _(empty)_ | Global shared secret for server-to-server (`X-API-Key` header) |
 | `jwt_secret` | _(empty)_ | JWT signing secret (min 32 chars) |
 | `jwt_expire_hours` | `24` | JWT token validity in hours |
 | `service_name` | `fusionpbx-api-bridge` | systemd unit name |
 | `service_path` | `/var/lib/fusionpbx-api-bridge` | Path to the Python service directory |
+
+> Per-user API keys are managed in FusionPBX itself — **Admin → Users → Edit → API Key**. No additional configuration needed.
