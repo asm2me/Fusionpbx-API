@@ -24,9 +24,9 @@ mkdir -p /var/log/fusionpbx-api-bridge
 # Copy Python source (run from project root)
 cp -r python/* "$INSTALL_DIR/"
 
-# Install dependencies system-wide
-pip3 install --upgrade pip -q
-pip3 install -r "$INSTALL_DIR/requirements.txt" -q
+# Install dependencies system-wide (--break-system-packages required on Debian 12+)
+pip3 install --upgrade pip --break-system-packages -q
+pip3 install -r "$INSTALL_DIR/requirements.txt" --break-system-packages -q
 
 # ── 3. Minimal .env (DB bootstrap only) ──────────────────────────────────────
 # The rest of the settings come from FusionPBX v_default_settings.
