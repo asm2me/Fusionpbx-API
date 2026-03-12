@@ -81,12 +81,12 @@ $daemon_status  = 'unknown';
 $daemon_active  = false;
 $daemon_uptime  = '';
 
-exec("systemctl is-active " . escapeshellarg($service) . " 2>&1", $out, $rc);
+exec("/usr/bin/systemctl is-active " . escapeshellarg($service) . " 2>&1", $out, $rc);
 $daemon_active = ($rc === 0);
 $daemon_status = $daemon_active ? 'running' : 'stopped';
 
 if ($daemon_active) {
-    exec("systemctl show " . escapeshellarg($service) . " --property=ActiveEnterTimestamp 2>&1", $ts_out);
+    exec("/usr/bin/systemctl show " . escapeshellarg($service) . " --property=ActiveEnterTimestamp 2>&1", $ts_out);
     if (!empty($ts_out[0])) {
         $ts_str = trim(str_replace('ActiveEnterTimestamp=', '', $ts_out[0]));
         if ($ts_str) {
@@ -389,11 +389,11 @@ require_once dirname(__DIR__, 2) . "/resources/header.php";
                 <div class="alert alert-info mt-2 mb-0 small">
                     <strong><i class="fas fa-info-circle mr-1"></i>Setup reminder:</strong>
                     For daemon controls to work, run once on the server:
-                    <pre class="mb-0 mt-1 bg-dark text-light p-2 rounded" style="font-size:0.85em;">echo "www-data ALL=(ALL) NOPASSWD: /bin/systemctl start <?= htmlspecialchars($service) ?>
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop <?= htmlspecialchars($service) ?>
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart <?= htmlspecialchars($service) ?>
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl enable <?= htmlspecialchars($service) ?>
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl show <?= htmlspecialchars($service) ?>" \
+                    <pre class="mb-0 mt-1 bg-dark text-light p-2 rounded" style="font-size:0.85em;">echo "www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl start <?= htmlspecialchars($service) ?>
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop <?= htmlspecialchars($service) ?>
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart <?= htmlspecialchars($service) ?>
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable <?= htmlspecialchars($service) ?>
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl show <?= htmlspecialchars($service) ?>" \
   | sudo tee /etc/sudoers.d/fusionpbx-api-bridge</pre>
                 </div>
             </div>

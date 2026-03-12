@@ -162,7 +162,7 @@ foreach ($values as $subcategory => $value) {
 // ── Optionally restart daemon ─────────────────────────────────────────────────
 if (!empty($_POST['save_and_restart'])) {
     $service = escapeshellarg($values['service_name'] ?? 'fusionpbx-api-bridge');
-    exec("sudo systemctl restart $service 2>&1", $out, $rc);
+    exec("sudo /usr/bin/systemctl restart $service 2>&1", $out, $rc);
     if ($rc !== 0) {
         $_SESSION['api_bridge_message']      = 'Settings saved. Daemon restart failed: ' . implode(' ', $out);
         $_SESSION['api_bridge_message_type'] = 'warning';

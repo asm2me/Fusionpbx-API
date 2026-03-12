@@ -136,11 +136,11 @@ echo "    Database records inserted"
 SUDOERS_FILE="/etc/sudoers.d/$SERVICE_NAME"
 cat > "$SUDOERS_FILE" <<EOF
 # Allow FusionPBX web process to manage the API Bridge daemon
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl start   $SERVICE_NAME
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop    $SERVICE_NAME
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl enable  $SERVICE_NAME
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl show    $SERVICE_NAME --property=ActiveEnterTimestamp
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl start   $SERVICE_NAME
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop    $SERVICE_NAME
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart $SERVICE_NAME
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable  $SERVICE_NAME
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl show    $SERVICE_NAME --property=ActiveEnterTimestamp
 EOF
 chmod 440 "$SUDOERS_FILE"
 echo "    Sudoers written to $SUDOERS_FILE"

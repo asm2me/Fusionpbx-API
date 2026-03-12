@@ -86,7 +86,7 @@ if (!in_array($action, $allowed, true)) {
 }
 
 // ── Execute via sudo ──────────────────────────────────────────────────────────
-$cmd    = "sudo /bin/systemctl {$action} {$service} 2>&1";
+$cmd    = "sudo /usr/bin/systemctl {$action} {$service} 2>&1";
 $output = [];
 exec($cmd, $output, $rc);
 
