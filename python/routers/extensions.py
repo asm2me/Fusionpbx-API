@@ -22,6 +22,7 @@ async def get_registrations(
     return {'registrations': regs}
 
 
+@router.get('')
 @router.get('/')
 async def get_extensions(
     domain: str = Query(...),

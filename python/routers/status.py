@@ -8,6 +8,7 @@ from services.ws_service import ws_service
 router = APIRouter(prefix='/api/status', tags=['Status'])
 
 
+@router.get('')
 @router.get('/')
 async def status():
     return {

@@ -23,6 +23,7 @@ async def call_stats(
     return {'stats': stats}
 
 
+@router.get('')
 @router.get('/')
 async def get_cdr(
     domain: Optional[str] = Query(None),

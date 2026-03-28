@@ -5,6 +5,7 @@ from services.db_service import db_service
 router = APIRouter(prefix='/api/domains', tags=['Domains'])
 
 
+@router.get('')
 @router.get('/')
 async def get_domains(_user=Depends(require_auth)):
     # User-key auth can only see their own domain
