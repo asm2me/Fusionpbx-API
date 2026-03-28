@@ -77,6 +77,24 @@ class DBService:
             )
         return [dict(r) for r in rows]
 
+    async def get_extension_for_provision(self, extension: str, domain: str) -> Optional[dict]:
+        """Fetch extension with SIP password for provisioning link generation."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT e.extension, e.password,
+                       e.effective_caller_id_name, e.effective_caller_id_number,
+                       d.domain_name
+                FROM v_extensions e
+                JOIN v_domains d ON e.domain_uuid = d.domain_uuid
+                WHERE d.domain_name = $1 AND (e.extension = $2 OR e.number_alias = $2)
+                  AND e.enabled = 'true'
+                LIMIT 1
+                """,
+                domain, extension,
+            )
+        return dict(row) if row else None
+
     async def get_extension_by_number(self, extension: str, domain: str) -> Optional[dict]:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(

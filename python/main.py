@@ -22,7 +22,7 @@ from services.db_service import db_service
 from services.fusionpbx_service import fusionpbx_service
 from services.ws_service import ws_service
 from deps.auth import verify_ws_token
-from routers import auth, calls, cdr, extensions, domains, status
+from routers import auth, calls, cdr, extensions, domains, status, provision
 
 logging.basicConfig(
     level=logging.DEBUG if settings.env == 'development' else logging.INFO,
@@ -128,6 +128,7 @@ app.include_router(cdr.router)
 app.include_router(extensions.router)
 app.include_router(domains.router)
 app.include_router(status.router)
+app.include_router(provision.router)
 
 
 @app.websocket('/ws')
