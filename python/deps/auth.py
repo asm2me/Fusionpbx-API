@@ -67,5 +67,5 @@ async def verify_ws_token(token: str) -> dict:
         return {'sub': token, 'source': 'global'}
     user = await _lookup_user_by_api_key(token)
     if user:
-        return {'sub': token, 'source': 'user', 'username': user['username']}
+        return {'sub': token, 'source': 'user', 'username': user['username'], 'domain': user['domain']}
     return _verify_jwt(token)

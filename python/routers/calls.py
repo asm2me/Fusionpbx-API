@@ -48,12 +48,19 @@ class DtmfRequest(BaseModel):
     digits: str
 
 
+def _effective_domain(user: dict, requested: Optional[str] = None) -> Optional[str]:
+    """Enforce user's domain — user-key auth cannot see other domains."""
+    if user.get('source') == 'user':
+        return user.get('domain')  # always use their domain, ignore requested
+    return requested  # global key can filter by any domain
+
+
 @router.get('/active')
 async def get_active_calls(
     domain: Optional[str] = Query(None),
     _user=Depends(require_auth),
 ):
-    calls = await esl_service.get_active_calls(domain)
+    calls = await esl_service.get_active_calls(_effective_domain(_user, domain))
     return {'calls': calls, 'count': len(calls)}
 
 
@@ -62,7 +69,7 @@ async def get_channels(
     domain: Optional[str] = Query(None),
     _user=Depends(require_auth),
 ):
-    channels = await esl_service.get_active_channels(domain)
+    channels = await esl_service.get_active_channels(_effective_domain(_user, domain))
     return {'channels': channels, 'count': len(channels)}
 
 

@@ -111,6 +111,7 @@ app = FastAPI(
     version='1.0.0',
     description='REST API + WebSocket bridge for FusionPBX/FreeSWITCH — settings managed via FusionPBX Admin UI',
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.add_middleware(

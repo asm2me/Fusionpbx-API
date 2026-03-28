@@ -6,6 +6,12 @@ from services.db_service import db_service
 router = APIRouter(prefix='/api/cdr', tags=['CDR'])
 
 
+def _effective_domain(user: dict, requested: Optional[str] = None) -> Optional[str]:
+    if user.get('source') == 'user':
+        return user.get('domain')
+    return requested
+
+
 @router.get('/stats/summary')
 async def call_stats(
     domain: Optional[str] = Query(None),
@@ -13,7 +19,7 @@ async def call_stats(
     end_date: Optional[str] = Query(None),
     _user=Depends(require_auth),
 ):
-    stats = await db_service.get_call_stats({'domain': domain, 'startDate': start_date, 'endDate': end_date})
+    stats = await db_service.get_call_stats({'domain': _effective_domain(_user, domain), 'startDate': start_date, 'endDate': end_date})
     return {'stats': stats}
 
 
@@ -29,8 +35,9 @@ async def get_cdr(
     offset: int = Query(0, ge=0),
     _user=Depends(require_auth),
 ):
+    eff_domain = _effective_domain(_user, domain)
     filters = {
-        'domain': domain, 'startDate': start_date, 'endDate': end_date,
+        'domain': eff_domain, 'startDate': start_date, 'endDate': end_date,
         'direction': direction, 'extension': extension, 'searchNumber': search,
         'limit': limit, 'offset': offset,
     }
