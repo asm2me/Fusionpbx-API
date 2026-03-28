@@ -39,12 +39,19 @@ async def _verify_api_key(key: str) -> dict:
     # 2. Match per-user API key from v_users
     user = await _lookup_user_by_api_key(key)
     if user:
+        try:
+            from services.db_service import db_service
+            groups = await db_service.get_user_groups(user['user_uuid'], user['domain'])
+        except Exception as e:
+            logger.error('Group lookup failed: %s', e)
+            groups = []
         return {
             'sub': key,
             'source': 'user',
             'username': user['username'],
             'domain': user['domain'],
             'user_uuid': user['user_uuid'],
+            'groups': groups,
         }
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid API key')
 

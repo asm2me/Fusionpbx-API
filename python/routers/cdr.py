@@ -52,4 +52,7 @@ async def get_cdr_record(uuid: str, _user=Depends(require_auth)):
     record = await db_service.get_cdr_by_uuid(uuid)
     if not record:
         raise HTTPException(404, 'CDR record not found')
+    # Per-user keys may only access CDR records in their own domain
+    if _user.get('source') == 'user' and record.get('domain_name') != _user.get('domain'):
+        raise HTTPException(403, 'Access denied')
     return {'record': record}

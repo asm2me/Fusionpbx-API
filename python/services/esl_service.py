@@ -256,8 +256,8 @@ class ESLService:
             )]
         return rows
 
-    async def get_channel_info(self, call_uuid: str) -> Optional[dict]:
-        channels = await self.get_active_channels()
+    async def get_channel_info(self, call_uuid: str, domain: str = None) -> Optional[dict]:
+        channels = await self.get_active_channels(domain)
         return next((c for c in channels if c.get('uuid') == call_uuid), None)
 
     def get_status(self) -> dict:

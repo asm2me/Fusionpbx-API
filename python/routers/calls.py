@@ -55,6 +55,16 @@ def _effective_domain(user: dict, requested: Optional[str] = None) -> Optional[s
     return requested  # global key can filter by any domain
 
 
+async def _verify_channel_ownership(uuid: str, user: dict):
+    """For per-user keys: raise 403 if the channel does not belong to user's domain."""
+    if user.get('source') != 'user':
+        return  # global key may operate on any channel
+    domain = user.get('domain')
+    channel = await esl_service.get_channel_info(uuid, domain)
+    if not channel:
+        raise HTTPException(403, 'Channel not found in your domain')
+
+
 @router.get('/active')
 async def get_active_calls(
     domain: Optional[str] = Query(None),
@@ -81,7 +91,8 @@ async def esl_status(_user=Depends(require_auth)):
 @router.get('/channels/{uuid}')
 async def get_channel(uuid: str, _user=Depends(require_auth)):
     valid_uuid(uuid)
-    channel = await esl_service.get_channel_info(uuid)
+    domain = _effective_domain(_user)
+    channel = await esl_service.get_channel_info(uuid, domain)
     if not channel:
         raise HTTPException(404, 'Channel not found')
     return {'channel': channel}
@@ -94,6 +105,9 @@ async def originate_call(body: OriginateRequest, _user=Depends(require_auth)):
         raise HTTPException(400, 'from, to, domain are required')
     if body.timeout and not (5 <= body.timeout <= 120):
         raise HTTPException(400, 'timeout must be between 5 and 120')
+    # Per-user keys must originate within their own domain
+    if _user.get('source') == 'user' and body.domain != _user.get('domain'):
+        raise HTTPException(403, 'You can only originate calls within your domain')
     result = await esl_service.originate_call(
         from_ext=body.from_ext,
         to=body.to,
@@ -109,6 +123,7 @@ async def originate_call(body: OriginateRequest, _user=Depends(require_auth)):
 async def hangup(uuid: str, body: HangupRequest = HangupRequest(), _user=Depends(require_auth)):
     valid_uuid(uuid)
     check_esl()
+    await _verify_channel_ownership(uuid, _user)
     await esl_service.hangup(uuid, body.cause or 'NORMAL_CLEARING')
     return {'success': True, 'message': 'Call terminated', 'uuid': uuid}
 
@@ -117,6 +132,7 @@ async def hangup(uuid: str, body: HangupRequest = HangupRequest(), _user=Depends
 async def hold(uuid: str, _user=Depends(require_auth)):
     valid_uuid(uuid)
     check_esl()
+    await _verify_channel_ownership(uuid, _user)
     await esl_service.hold(uuid)
     return {'success': True, 'message': 'Call placed on hold', 'uuid': uuid}
 
@@ -125,6 +141,7 @@ async def hold(uuid: str, _user=Depends(require_auth)):
 async def unhold(uuid: str, _user=Depends(require_auth)):
     valid_uuid(uuid)
     check_esl()
+    await _verify_channel_ownership(uuid, _user)
     await esl_service.unhold(uuid)
     return {'success': True, 'message': 'Call resumed from hold', 'uuid': uuid}
 
@@ -133,6 +150,7 @@ async def unhold(uuid: str, _user=Depends(require_auth)):
 async def toggle_hold(uuid: str, _user=Depends(require_auth)):
     valid_uuid(uuid)
     check_esl()
+    await _verify_channel_ownership(uuid, _user)
     await esl_service.toggle_hold(uuid)
     return {'success': True, 'message': 'Hold toggled', 'uuid': uuid}
 
@@ -141,8 +159,12 @@ async def toggle_hold(uuid: str, _user=Depends(require_auth)):
 async def transfer(uuid: str, body: TransferRequest, _user=Depends(require_auth)):
     valid_uuid(uuid)
     check_esl()
+    await _verify_channel_ownership(uuid, _user)
     if body.type not in ('blind', 'attended'):
         raise HTTPException(400, 'type must be "blind" or "attended"')
+    # Transfer destination domain must match user's domain for per-user keys
+    if _user.get('source') == 'user' and body.domain != _user.get('domain'):
+        raise HTTPException(403, 'Transfer destination domain must match your domain')
     if body.type == 'attended':
         result = await esl_service.attended_transfer(uuid, body.destination, body.domain)
         return {
@@ -159,6 +181,7 @@ async def transfer(uuid: str, body: TransferRequest, _user=Depends(require_auth)
 async def send_dtmf(uuid: str, body: DtmfRequest, _user=Depends(require_auth)):
     valid_uuid(uuid)
     check_esl()
+    await _verify_channel_ownership(uuid, _user)
     if not re.match(r'^[0-9*#A-D]+$', body.digits):
         raise HTTPException(400, 'Invalid DTMF digits')
     await esl_service.send_dtmf(uuid, body.digits)
@@ -169,6 +192,7 @@ async def send_dtmf(uuid: str, body: DtmfRequest, _user=Depends(require_auth)):
 async def mute(uuid: str, _user=Depends(require_auth)):
     valid_uuid(uuid)
     check_esl()
+    await _verify_channel_ownership(uuid, _user)
     await esl_service.mute(uuid)
     return {'success': True, 'message': 'Channel muted', 'uuid': uuid}
 
@@ -177,5 +201,6 @@ async def mute(uuid: str, _user=Depends(require_auth)):
 async def unmute(uuid: str, _user=Depends(require_auth)):
     valid_uuid(uuid)
     check_esl()
+    await _verify_channel_ownership(uuid, _user)
     await esl_service.unmute(uuid)
     return {'success': True, 'message': 'Channel unmuted', 'uuid': uuid}

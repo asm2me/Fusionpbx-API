@@ -145,6 +145,20 @@ class DBService:
                 f'SELECT COUNT(*) FROM v_xml_cdr {where}', *params
             )
 
+    async def get_user_groups(self, user_uuid: str, domain: str) -> list:
+        """Return list of group names the user belongs to within their domain."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT ug.group_name
+                FROM v_user_groups ug
+                JOIN v_domains d ON d.domain_uuid = ug.domain_uuid
+                WHERE ug.user_uuid = $1 AND d.domain_name = $2
+                """,
+                user_uuid, domain,
+            )
+        return [r['group_name'] for r in rows]
+
     async def get_cdr_by_uuid(self, cdr_uuid: str) -> Optional[dict]:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
