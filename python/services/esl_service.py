@@ -238,7 +238,9 @@ class ESLService:
             return []
         rows = data.get('rows', [])
         if domain:
-            rows = [r for r in rows if domain in (r.get('context') or '')]
+            rows = [r for r in rows if domain in (
+                r.get('accountcode') or r.get('context') or r.get('presence_id') or ''
+            )]
         return rows
 
     async def get_active_calls(self, domain: str = None) -> list:
@@ -249,7 +251,9 @@ class ESLService:
             return []
         rows = data.get('rows', [])
         if domain:
-            rows = [r for r in rows if domain in (r.get('context') or '')]
+            rows = [r for r in rows if domain in (
+                r.get('accountcode') or r.get('context') or r.get('presence_id') or ''
+            )]
         return rows
 
     async def get_channel_info(self, call_uuid: str) -> Optional[dict]:
