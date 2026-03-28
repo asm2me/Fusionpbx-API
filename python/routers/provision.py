@@ -36,6 +36,9 @@ class ProvisionRequest(BaseModel):
     # All fields below are optional — defaults are auto-derived from the domain
     wss_url: Optional[str] = None          # e.g. wss://sip.company.com:7443
     stun: Optional[str] = 'stun:stun.l.google.com:19302'
+    turn: Optional[str] = None             # e.g. turn:turn.company.com:3478
+    turn_username: Optional[str] = None
+    turn_password: Optional[str] = None
     codec: Optional[str] = 'PCMU (G.711 µ-law)'
     expires_hours: Optional[int] = 48
 
@@ -93,6 +96,9 @@ async def generate_provision_link(
         'iat':     int(now.timestamp()),
         'exp':     int(expires_at.timestamp()),
     }
+    if req.turn:          payload['turn']       = req.turn
+    if req.turn_username: payload['turn_user']  = req.turn_username
+    if req.turn_password: payload['turn_pass']  = req.turn_password
 
     token = jwt.encode(payload, settings.jwt_secret, algorithm='HS256')
     url = f'{PROVISION_BASE_URL}?t={token}'
