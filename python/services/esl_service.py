@@ -192,8 +192,8 @@ class ESLService:
             f'originate_timeout={timeout}',
         ])
         cmd = (f'originate {{{dial_vars}}}'
-               f'sofia/internal/{from_ext}@{domain} '
-               f'&bridge(sofia/internal/{to}@{domain})')
+               f'user/{from_ext}@{domain} '
+               f'&bridge(user/{to}@{domain})')
         logger.info(f'Originating call from={from_ext} to={to} domain={domain} uuid={call_uuid}')
         await self.bgapi(cmd)
         return {'uuid': call_uuid}
@@ -217,7 +217,7 @@ class ESLService:
         await self.hold(call_uuid)
         new_uuid = str(uuid_lib.uuid4())
         cmd = (f'originate {{origination_uuid={new_uuid},domain_name={domain}}}'
-               f'sofia/internal/{destination}@{domain} &bridge({call_uuid})')
+               f'user/{destination}@{domain} &bridge({call_uuid})')
         await self.bgapi(cmd)
         return {'originalUuid': call_uuid, 'newUuid': new_uuid}
 
