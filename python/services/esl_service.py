@@ -193,7 +193,7 @@ class ESLService:
         ])
         cmd = (f'originate {{{dial_vars}}}'
                f'user/{from_ext}@{domain} '
-               f'&bridge(user/{to}@{domain})')
+               f'&bridge(loopback/{to}@{domain})')
         logger.info(f'Originating call from={from_ext} to={to} domain={domain} uuid={call_uuid}')
         await self.bgapi(cmd)
         return {'uuid': call_uuid}
