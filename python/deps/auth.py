@@ -1,8 +1,11 @@
+import logging
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 api_key_header = APIKeyHeader(name='X-API-Key', auto_error=False)
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -18,11 +21,14 @@ def create_token(api_key: str, domain: str = None) -> str:
 
 
 async def _lookup_user_by_api_key(key: str) -> dict | None:
-    """Check v_users.user_api_key — returns user info or None."""
+    """Check v_users.api_key — returns user info or None."""
     try:
         from services.db_service import db_service
-        return await db_service.get_user_by_api_key(key)
-    except Exception:
+        result = await db_service.get_user_by_api_key(key)
+        logger.debug('API key lookup result: %s', result)
+        return result
+    except Exception as e:
+        logger.error('API key lookup failed: %s', e)
         return None
 
 
