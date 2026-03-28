@@ -215,7 +215,8 @@ class ESLService extends EventEmitter {
 
     const originateCmd = `originate ${dialString}sofia/internal/${from}@${domain} &bridge(sofia/internal/${to}@${domain})`;
     logger.info('Originating call', { from, to, domain, uuid });
-    await this._bgapi(originateCmd);
+    const result = await this._api(originateCmd);
+    logger.info('Originate result', { uuid, result });
     return { uuid };
   }
 
