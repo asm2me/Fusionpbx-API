@@ -18,6 +18,7 @@ const cdrRoutes        = require('./routes/cdr');
 const extensionsRoutes = require('./routes/extensions');
 const domainsRoutes    = require('./routes/domains');
 const statusRoutes     = require('./routes/status');
+const ticketsRoutes    = require('./routes/tickets');
 
 const app = express();
 
@@ -80,6 +81,7 @@ app.use('/api/cdr', cdrRoutes);
 app.use('/api/extensions', extensionsRoutes);
 app.use('/api/domains', domainsRoutes);
 app.use('/api/status', statusRoutes);
+app.use('/api/tickets', ticketsRoutes);
 
 // ─── Root redirect ────────────────────────────────────────────────────────────
 app.get('/', (req, res) => res.redirect('/api-docs'));
