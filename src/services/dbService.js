@@ -185,34 +185,37 @@ class DBService {
   async getExtensions(domain) {
     const sql = `
       SELECT
-        extension_uuid,
-        domain_name,
-        extension,
-        number_alias,
-        effective_caller_id_name,
-        effective_caller_id_number,
-        outbound_caller_id_name,
-        outbound_caller_id_number,
-        directory_first_name,
-        directory_last_name,
-        voicemail_enabled,
-        enabled
-      FROM v_extensions
-      WHERE domain_name = $1
-        AND enabled = 'true'
-      ORDER BY extension ASC
+        e.extension_uuid,
+        d.domain_name,
+        e.extension,
+        e.number_alias,
+        e.effective_caller_id_name,
+        e.effective_caller_id_number,
+        e.outbound_caller_id_name,
+        e.outbound_caller_id_number,
+        e.directory_first_name,
+        e.directory_last_name,
+        e.enabled
+      FROM v_extensions e
+      JOIN v_domains d ON d.domain_uuid = e.domain_uuid
+      WHERE d.domain_name = $1
+        AND e.enabled = 'true'
+      ORDER BY e.extension ASC
     `;
     const result = await this.query(sql, [domain]);
     return result.rows;
   }
 
   /**
-   * Get a single extension by number.
+   * Get a single extension by number within a domain.
+   * v_extensions has no domain_name column, so join v_domains on domain_uuid.
    */
   async getExtensionByNumber(extension, domain) {
     const sql = `
-      SELECT * FROM v_extensions
-      WHERE extension = $1 AND domain_name = $2
+      SELECT e.*
+      FROM v_extensions e
+      JOIN v_domains d ON d.domain_uuid = e.domain_uuid
+      WHERE e.extension = $1 AND d.domain_name = $2
     `;
     const result = await this.query(sql, [extension, domain]);
     return result.rows[0] || null;
@@ -414,6 +417,136 @@ class DBService {
     `;
     const result = await this.query(sql, [username, domainName]);
     return result.rows[0] || null;
+  }
+
+  /**
+   * Fetch the data needed to sign a user in: the extension's SIP password plus
+   * the linked user's web-login bcrypt hash, for a username within a domain.
+   * Returns null if the extension/user isn't found.
+   */
+  async getAccountForSignin(username, domainName) {
+    const sql = `
+      SELECT
+        e.extension                      AS extension,
+        e.password                       AS sip_password,
+        e.effective_caller_id_name       AS display_name,
+        e.enabled                        AS ext_enabled,
+        u.password                       AS web_password_hash,
+        u.user_enabled                   AS user_enabled
+      FROM v_extensions e
+      JOIN v_domains d ON d.domain_uuid = e.domain_uuid
+      LEFT JOIN v_extension_users eu ON eu.extension_uuid = e.extension_uuid
+      LEFT JOIN v_users u ON u.user_uuid = eu.user_uuid
+      WHERE e.extension = $1 AND d.domain_name = $2
+      LIMIT 1
+    `;
+    const result = await this.query(sql, [username, domainName]);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Find an extension previously provisioned for a Google identity, tagged in the
+   * extension's description as "google:<sub>". Lets repeat Google sign-in resolve
+   * back to the same account regardless of the derived username.
+   */
+  async getExtensionByGoogleSub(sub, domainName) {
+    const sql = `
+      SELECT e.extension AS extension,
+             e.password  AS sip_password,
+             e.effective_caller_id_name AS display_name,
+             e.enabled   AS ext_enabled
+      FROM v_extensions e
+      JOIN v_domains d ON d.domain_uuid = e.domain_uuid
+      WHERE d.domain_name = $1 AND e.description = $2
+      LIMIT 1
+    `;
+    const result = await this.query(sql, [domainName, `google:${sub}`]);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Resolve a domain UUID by name.
+   */
+  async getDomainUuid(domainName) {
+    const res = await this.query(
+      `SELECT domain_uuid FROM v_domains WHERE domain_name = $1 AND domain_enabled = 'true'`,
+      [domainName]
+    );
+    return res.rows[0]?.domain_uuid || null;
+  }
+
+  /**
+   * Create a full FusionPBX SIP account in one transaction:
+   *   • v_extensions      – the SIP-registerable extension (authoritative for auth)
+   *   • v_users           – FusionPBX user (web/portal login), bcrypt password
+   *   • v_extension_users – links the user to the extension
+   *
+   * @param {object} o
+   * @param {string} o.domainUuid
+   * @param {string} o.domainName
+   * @param {string} o.extension        extension number / SIP username
+   * @param {string} o.sipPassword      SIP auth password (v_extensions.password)
+   * @param {string} o.webPasswordHash  bcrypt hash for v_users.password
+   * @param {string} [o.email]
+   * @param {string} [o.displayName]
+   * @param {string} o.userContext      usually the domain name
+   * @param {number} [o.callTimeout=30]
+   * @param {number} [o.maxRegistrations=5]
+   * @returns {{ extensionUuid: string, userUuid: string }}
+   */
+  async createExtensionRecords(o) {
+    const { randomUUID } = require('crypto');
+    const extensionUuid = randomUUID();
+    const userUuid = randomUUID();
+    const extUserUuid = randomUUID();
+    const display = o.displayName || o.extension;
+    const ctx = o.userContext || o.domainName;
+    const callTimeout = o.callTimeout ?? 30;
+    const maxReg = o.maxRegistrations ?? 5;
+    const description = o.description || 'Self-service signup';
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      await client.query(
+        `INSERT INTO v_extensions
+           (extension_uuid, domain_uuid, extension, password, accountcode,
+            user_context, effective_caller_id_name, effective_caller_id_number,
+            outbound_caller_id_name, outbound_caller_id_number,
+            directory_visible, directory_exten_visible,
+            max_registrations, limit_max, call_timeout,
+            enabled, description, insert_date, insert_user)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$7,$8,'true','true',$9,$10,$11,'true',
+                 $12, now(), $1)`,
+        [extensionUuid, o.domainUuid, o.extension, o.sipPassword, o.extension,
+         ctx, display, o.extension, String(maxReg), '5', String(callTimeout), description]
+      );
+
+      await client.query(
+        `INSERT INTO v_users
+           (user_uuid, domain_uuid, username, password, salt, user_email,
+            user_status, user_type, user_enabled, insert_date, insert_user)
+         VALUES ($1,$2,$3,$4,'',$5,'','default','true', now(), $1)`,
+        [userUuid, o.domainUuid, o.extension, o.webPasswordHash, o.email || null]
+      );
+
+      await client.query(
+        `INSERT INTO v_extension_users
+           (extension_user_uuid, domain_uuid, extension_uuid, user_uuid,
+            insert_date, insert_user)
+         VALUES ($1,$2,$3,$4, now(), $4)`,
+        [extUserUuid, o.domainUuid, extensionUuid, userUuid]
+      );
+
+      await client.query('COMMIT');
+      return { extensionUuid, userUuid };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async close() {

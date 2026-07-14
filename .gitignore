@@ -5,3 +5,8 @@ logs/
 .DS_Store
 dist/
 coverage/
+
+# Environment files with secrets (keep .env.example tracked)
+.env.production
+.env.*
+!.env.example
