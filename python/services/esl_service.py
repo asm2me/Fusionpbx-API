@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import uuid as uuid_lib
 from typing import Optional, Callable, List
 from config import settings
@@ -14,6 +15,33 @@ SUBSCRIBE_EVENTS = [
     'CHANNEL_CALLSTATE', 'CHANNEL_STATE', 'DTMF', 'CALL_UPDATE',
     'RECORD_START', 'RECORD_STOP', 'PLAYBACK_START', 'PLAYBACK_STOP',
 ]
+
+
+# what a caller name may hold: letters of any script, digits, spaces and . # + - _ (no , { } ' which would end
+# or extend the FreeSWITCH variable list)
+_UNSAFE_NAME = re.compile(r"[^\w .#+\-]")
+
+
+def originate_command(call_uuid: str, from_ext: str, to: str, domain: str,
+                      caller_id: Optional[str] = None, caller_name: Optional[str] = None,
+                      timeout: int = 30) -> str:
+    """The ESL originate: ring the extension first, then bridge it to `to` through the domain's dialplan."""
+    cid_num = caller_id or from_ext
+    cid_name = _UNSAFE_NAME.sub('', caller_name or from_ext).strip()[:50] or from_ext
+    dial_vars = ','.join([
+        f'origination_uuid={call_uuid}',
+        f'origination_caller_id_number={cid_num}',
+        # quoted so a name with spaces stays one value
+        f"origination_caller_id_name='{cid_name}'",
+        f'domain_name={domain}',
+        f'originate_timeout={timeout}',
+        # once the far end answers, the extension's phone keeps the caller ID above: the number dialled (for
+        # example a customer called on behalf of a delivery driver) is not sent to it as a display update
+        'ignore_display_updates=true',
+    ])
+    return (f'originate {{{dial_vars}}}'
+            f'user/{from_ext}@{domain} '
+            f'&bridge(loopback/{to}/{domain})')
 
 
 class ESLMessage:
@@ -182,19 +210,9 @@ class ESLService:
                               caller_id: str = None, caller_name: str = None,
                               timeout: int = 30) -> dict:
         call_uuid = str(uuid_lib.uuid4())
-        cid_num = caller_id or from_ext
-        cid_name = caller_name or from_ext
-        dial_vars = ','.join([
-            f'origination_uuid={call_uuid}',
-            f'origination_caller_id_number={cid_num}',
-            f'origination_caller_id_name={cid_name}',
-            f'domain_name={domain}',
-            f'originate_timeout={timeout}',
-        ])
-        cmd = (f'originate {{{dial_vars}}}'
-               f'user/{from_ext}@{domain} '
-               f'&bridge(loopback/{to}/{domain})')
-        logger.info(f'Originating call from={from_ext} to={to} domain={domain} uuid={call_uuid}')
+        cmd = originate_command(call_uuid, from_ext, to, domain, caller_id, caller_name, timeout)
+        # the number dialled may be a customer's that the caller is not meant to see: only its end goes to the log
+        logger.info(f'Originating call from={from_ext} to=…{to[-3:]} domain={domain} uuid={call_uuid}')
         await self.bgapi(cmd)
         return {'uuid': call_uuid}
 

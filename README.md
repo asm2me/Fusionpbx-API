@@ -243,8 +243,16 @@ Content-Type: application/json
 ```
 
 ```json
-{ "uuid": "abc123-...", "message": "Call from 1001 to 1002 initiated" }
+{ "uuid": "abc123-...", "message": "Call from 1001 initiated" }
 ```
+
+The extension (`from`) rings first; when it answers, `to` is dialled through the domain's dialplan with
+`callerId`/`callerName`. The extension's phone keeps showing that caller ID after the far end answers
+(`ignore_display_updates=true`), and the dialled number is not echoed in the answer or written in full to the
+log, so a call placed on someone's behalf (e.g. a delivery driver calling a customer) does not reveal it.
+Values are checked before they reach FreeSWITCH: `from` an extension (`[0-9A-Za-z_.+-]`), `to` a number or
+extension (`+`, digits, letters, `* # _ . -`), `callerId` digits with an optional `+`, `callerName` up to 50
+letters, digits, spaces and `. # + - _`; anything else is a 422.
 
 #### Hangup
 

@@ -23,12 +23,21 @@ def check_esl():
         raise HTTPException(503, 'ESL not connected to FreeSWITCH')
 
 
+# Values that end up inside a FreeSWITCH command: a space, comma, brace or quote could add arguments or
+# channel variables, so each is limited to what it can legitimately be.
+EXTENSION_PATTERN = r'^[0-9A-Za-z_.+\-]{1,32}$'
+DESTINATION_PATTERN = r'^\+?[0-9A-Za-z*#_.\-]{1,40}$'
+DOMAIN_PATTERN = r'^[A-Za-z0-9.\-]{1,253}$'
+CALLER_ID_PATTERN = r'^\+?[0-9]{1,20}$'
+CALLER_NAME_PATTERN = r'^[\w .#+\-]{0,50}$'
+
+
 class OriginateRequest(BaseModel):
-    from_ext: str = Field(alias='from')
-    to: str
-    domain: str
-    callerId: Optional[str] = None
-    callerName: Optional[str] = None
+    from_ext: str = Field(alias='from', pattern=EXTENSION_PATTERN)
+    to: str = Field(pattern=DESTINATION_PATTERN)
+    domain: str = Field(pattern=DOMAIN_PATTERN)
+    callerId: Optional[str] = Field(default=None, pattern=CALLER_ID_PATTERN)
+    callerName: Optional[str] = Field(default=None, pattern=CALLER_NAME_PATTERN)
     timeout: Optional[int] = 30
 
     model_config = {'populate_by_name': True}
@@ -39,8 +48,8 @@ class HangupRequest(BaseModel):
 
 
 class TransferRequest(BaseModel):
-    destination: str
-    domain: str
+    destination: str = Field(pattern=DESTINATION_PATTERN)
+    domain: str = Field(pattern=DOMAIN_PATTERN)
     type: Optional[str] = 'blind'
 
 
@@ -116,7 +125,8 @@ async def originate_call(body: OriginateRequest, _user=Depends(require_auth)):
         caller_name=body.callerName,
         timeout=body.timeout or 30,
     )
-    return {'uuid': result['uuid'], 'message': f"Call from {body.from_ext} to {body.to} initiated"}
+    # the number dialled is not echoed back: the caller may be someone who must not see it
+    return {'uuid': result['uuid'], 'message': f"Call from {body.from_ext} initiated"}
 
 
 @router.post('/{uuid}/hangup')
